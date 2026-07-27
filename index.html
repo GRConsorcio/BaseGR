@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal GR</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;background:#0a0a0a;color:#f0f0f0;min-height:100vh}
+</style>
+</head>
+<body>
+
+<div id="pgr-auth-screen" style="position:fixed;inset:0;background:#0a0a0a;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:Arial,Helvetica,sans-serif">
+  <div style="background:#111;border:1px solid rgba(201,168,76,0.25);border-radius:16px;padding:40px 36px;width:340px;max-width:88vw;text-align:center">
+    <div style="font-size:20px;font-weight:900;color:#e8c96a;margin-bottom:2px">GR Consórcio</div>
+    <div style="font-size:10.5px;color:#8a6f30;text-transform:uppercase;letter-spacing:.12em;margin-bottom:22px">Portal Interno · Acesso Restrito</div>
+    <input id="pgr-email" type="email" placeholder="E-mail" autocomplete="username" style="width:100%;background:#181818;border:1px solid #2a2a2a;color:#f0f0f0;border-radius:8px;padding:11px 13px;font-size:13px;margin-bottom:10px;outline:none;font-family:inherit;box-sizing:border-box">
+    <input id="pgr-pass" type="password" placeholder="Senha" autocomplete="current-password" onkeydown="if(event.key==='Enter')pgrLogin()" style="width:100%;background:#181818;border:1px solid #2a2a2a;color:#f0f0f0;border-radius:8px;padding:11px 13px;font-size:13px;margin-bottom:16px;outline:none;font-family:inherit;box-sizing:border-box">
+    <button onclick="pgrLogin()" id="pgr-btn" style="width:100%;background:#c9a84c;border:none;color:#0a0a0a;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Entrar</button>
+    <div id="pgr-err" style="color:#ef4444;font-size:11.5px;margin-top:12px;min-height:14px"></div>
+  </div>
+</div>
+
+<div id="pgr-hub" style="display:none;min-height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px">
+  <div style="font-size:26px;font-weight:900;color:#e8c96a;margin-bottom:4px">Portal GR</div>
+  <div style="font-size:11px;color:#8a6f30;text-transform:uppercase;letter-spacing:.12em;margin-bottom:8px">Controle Interno</div>
+  <div id="pgr-user-label" style="font-size:12px;color:#707070;margin-bottom:36px"></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;width:100%;max-width:760px">
+    <a href="gr.html" style="text-decoration:none;background:#111;border:1px solid #2a2a2a;border-radius:14px;padding:26px 22px;transition:border-color .15s" onmouseover="this.style.borderColor='#c9a84c'" onmouseout="this.style.borderColor='#2a2a2a'">
+      <div style="font-size:17px;font-weight:800;color:#e8c96a;margin-bottom:6px">GR Consórcio</div>
+      <div style="font-size:12px;color:#707070">Financeiro, pagamentos, cancelados, vendas e ranking</div>
+    </a>
+    <a href="gro.html" style="text-decoration:none;background:#111;border:1px solid #2a2a2a;border-radius:14px;padding:26px 22px;transition:border-color .15s" onmouseover="this.style.borderColor='#c9a84c'" onmouseout="this.style.borderColor='#2a2a2a'">
+      <div style="font-size:17px;font-weight:800;color:#e8c96a;margin-bottom:6px">GRO</div>
+      <div style="font-size:12px;color:#707070">Financeiro, pagamentos, cancelados, vendas e ranking</div>
+    </a>
+    <a href="comissoes.html" style="text-decoration:none;background:#111;border:1px solid #2a2a2a;border-radius:14px;padding:26px 22px;transition:border-color .15s" onmouseover="this.style.borderColor='#c9a84c'" onmouseout="this.style.borderColor='#2a2a2a'">
+      <div style="font-size:17px;font-weight:800;color:#e8c96a;margin-bottom:6px">Comissões</div>
+      <div style="font-size:12px;color:#707070">Planilha de comissões por consultor</div>
+    </a>
+  </div>
+  <a href="#" onclick="pgrLogout();return false" style="margin-top:40px;color:#ef4444;text-decoration:none;font-size:12px">Sair</a>
+</div>
+
+<script>
+const PGR_URL='https://prquggwhjcvenzuziaox.supabase.co';
+const PGR_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBycXVnZ3doamN2ZW56dXppYW94Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMTUzMDUsImV4cCI6MjA5Mzc5MTMwNX0.vjbVhGIUowS6AGE1Uf5uDutCMI193mhgra3GSwlqMec';
+const PGR_ALLOWED=['8499c7b5-8e70-4fb8-8a36-ce7aa29aede6','10b1fc08-4460-46e1-ac0a-53c13984c9d7'];
+const {createClient}=supabase;
+const pgrSb=createClient(PGR_URL,PGR_KEY);
+
+async function pgrLogin(){
+  const email=(document.getElementById('pgr-email').value||'').trim();
+  const pass=document.getElementById('pgr-pass').value||'';
+  const errEl=document.getElementById('pgr-err');
+  const btn=document.getElementById('pgr-btn');
+  errEl.textContent='';
+  if(!email||!pass){errEl.textContent='Informe e-mail e senha';return;}
+  btn.disabled=true;btn.textContent='Entrando...';
+  const{data,error}=await pgrSb.auth.signInWithPassword({email,password:pass});
+  btn.disabled=false;btn.textContent='Entrar';
+  if(error){errEl.textContent='E-mail ou senha inválidos';return;}
+  if(!PGR_ALLOWED.includes(data.user.id)){
+    await pgrSb.auth.signOut();
+    errEl.textContent='Acesso restrito — este login não tem permissão pro Portal GR';
+    return;
+  }
+  pgrShowHub(data.user);
+}
+async function pgrLogout(){
+  await pgrSb.auth.signOut();
+  location.reload();
+}
+function pgrShowHub(user){
+  document.getElementById('pgr-auth-screen').style.display='none';
+  document.getElementById('pgr-hub').style.display='flex';
+  document.getElementById('pgr-user-label').textContent=user.email;
+}
+(async function pgrCheckAuth(){
+  const{data:{session}}=await pgrSb.auth.getSession();
+  if(session&&PGR_ALLOWED.includes(session.user.id)){
+    pgrShowHub(session.user);
+  } else {
+    if(session) await pgrSb.auth.signOut();
+    document.getElementById('pgr-auth-screen').style.display='flex';
+  }
+})();
+</script>
+</body></html>
