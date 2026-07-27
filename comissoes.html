@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planilha Comissão</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&amp;family=DM+Mono:wght@400;500&amp;family=Lato:wght@300;400;700&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --gold: #C9A84C; --gold-light: #E8CC7A; --gold-dark: #8B6914;
+    --gold-pale: #F7EDD0; --gold-ultra: #FBF5E6;
+    --white: #FFFFFF; --off: #FAFAF7; --border: #D4AF5A;
+    --text: #2C2410; --muted: #8B7355; --red: #8B1A1A; --green-ink: #1A5C2A;
+    --shadow: rgba(139,105,20,0.18);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Lato', sans-serif; background: #1C1508; color: var(--text); min-height: 100vh; }
+
+  header {
+    background: linear-gradient(135deg, #1C1508 0%, #2C2010 50%, #1C1508 100%);
+    border-bottom: 2px solid var(--gold);
+    padding: 20px 36px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 200;
+  }
+  .header-left h1 { font-family: 'Playfair Display', serif; font-size: 1.5rem; font-weight: 700; color: var(--gold-light); letter-spacing: 0.04em; }
+  .header-left p { font-size: 0.72rem; color: var(--gold-dark); letter-spacing: 0.12em; text-transform: uppercase; margin-top: 2px; }
+  .save-badge { font-family: 'DM Mono', monospace; font-size: 0.7rem; background: rgba(201,168,76,0.15); color: var(--gold); padding: 5px 14px; border-radius: 20px; border: 1px solid rgba(201,168,76,0.3); white-space: nowrap; }
+
+  /* BACKUP BAR */
+  .header-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
+  .backup-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-backup { padding: 8px 14px; border-radius: 8px; background: rgba(255,255,255,0.03); font-family: 'Lato', sans-serif; font-size: 0.74rem; font-weight: 700; cursor: pointer; transition: all 0.2s; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-back-hist { border: 1px solid rgba(255,255,255,0.25); color: #E8E8E8; }
+  .btn-back-hist:hover { background: rgba(255,255,255,0.08); }
+  .btn-back-import { border: 1px solid #4A90D9; color: #7AB8F5; }
+  .btn-back-import:hover { background: rgba(74,144,217,0.14); }
+  .btn-back-export { border: 1px solid #3EA86B; color: #6FD99A; }
+  .btn-back-export:hover { background: rgba(62,168,107,0.14); }
+  .btn-back-html { border: 1px solid var(--gold); color: var(--gold-light); }
+  .btn-back-html:hover { background: rgba(201,168,76,0.14); }
+
+  /* HISTÓRICO / IMPORT MODAL EXTRAS */
+  .hist-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; background: var(--gold-ultra); }
+  .hist-item .hi-top { display: flex; justify-content: space-between; align-items: center; }
+  .hist-item .hi-action { font-family: 'Playfair Display', serif; font-weight: 700; font-size: 0.85rem; color: var(--text); }
+  .hist-item .hi-date { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--muted); }
+  .hist-item .hi-detail { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+  .import-mode-opt { display: flex; gap: 8px; align-items: flex-start; font-family: 'Lato', sans-serif; font-size: 0.85rem; color: var(--text); cursor: pointer; }
+  .import-mode-opt input { margin-top: 3px; }
+  .import-mode-opt .imo-sub { font-size: 0.75rem; color: var(--muted); font-weight: 400; }
+
+  .app { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 74px); }
+
+  /* SIDEBAR */
+  .sidebar { background: linear-gradient(180deg, #231A07 0%, #1C1508 100%); border-right: 1px solid rgba(201,168,76,0.25); padding: 24px 0; overflow-y: auto; }
+  .sidebar-title { font-family: 'Playfair Display', serif; font-size: 0.75rem; font-weight: 700; color: var(--gold-dark); letter-spacing: 0.18em; text-transform: uppercase; padding: 0 20px 14px; border-bottom: 1px solid rgba(201,168,76,0.15); margin-bottom: 12px; }
+  .folder { margin: 6px 16px; border-radius: 10px; overflow: hidden; border: 1px solid transparent; transition: all 0.2s; cursor: pointer; }
+  .folder.active { border-color: var(--gold); }
+  .folder-tab { display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: rgba(201,168,76,0.06); transition: background 0.2s; }
+  .folder.active .folder-tab { background: rgba(201,168,76,0.14); }
+  .folder-tab:hover { background: rgba(201,168,76,0.1); }
+  .folder-icon { font-size: 1.1rem; }
+  .folder-name { font-family: 'Playfair Display', serif; font-size: 0.88rem; font-weight: 600; color: var(--gold-light); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .folder-total { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--gold-dark); }
+
+  .sidebar-actions { padding: 12px 16px 4px; display: flex; flex-direction: column; gap: 8px; }
+  .btn-sidebar { width: 100%; padding: 10px; border-radius: 9px; font-family: 'Lato', sans-serif; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; text-align: center; }
+  .btn-new-vendor { background: linear-gradient(135deg, var(--gold-dark), var(--gold)); color: #fff; border: none; font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 3px 12px var(--shadow); }
+  .btn-new-vendor:hover { opacity: 0.85; }
+  .btn-home { background: transparent; border: 1px dashed rgba(201,168,76,0.4); color: var(--gold-dark); }
+  .btn-home:hover { border-color: var(--gold); color: var(--gold); }
+
+  .main { background: var(--off); overflow-y: auto; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* HOME */
+  .home-header { background: linear-gradient(135deg, #2C2010 0%, #3D2E0E 100%); border-bottom: 2px solid var(--gold); padding: 32px 36px; }
+  .home-header h2 { font-family: 'Playfair Display', serif; font-size: 1.8rem; color: var(--gold-light); margin-bottom: 4px; }
+  .home-header p { color: var(--gold-dark); font-size: 0.82rem; }
+  .cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 28px 36px; }
+  .dash-card { background: var(--white); border-radius: 14px; border: 1px solid var(--border); padding: 22px 20px; box-shadow: 0 4px 20px var(--shadow); position: relative; overflow: hidden; }
+  .dash-card::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--gold-dark), var(--gold-light), var(--gold-dark)); }
+  .dash-card .label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); margin-bottom: 8px; font-weight: 700; }
+  .dash-card .val { font-family: 'DM Mono', monospace; font-size: 1.5rem; color: var(--text); }
+  .dash-card .sub { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+  .consultants-grid { padding: 0 36px 36px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .consultant-card { background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; cursor: pointer; box-shadow: 0 2px 12px var(--shadow); transition: all 0.2s; display: flex; align-items: center; gap: 14px; }
+  .consultant-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px var(--shadow); border-color: var(--gold); }
+  .cc-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--gold-pale); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; border: 1px solid var(--border); flex-shrink: 0; }
+  .cc-name { font-family: 'Playfair Display', serif; font-size: 0.9rem; font-weight: 600; color: var(--text); }
+  .cc-total { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--green-ink); margin-top: 2px; }
+  .cc-count { font-size: 0.7rem; color: var(--muted); }
+
+  /* ADD VENDOR MODAL */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 500; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  .modal { background: var(--white); border-radius: 18px; border: 2px solid var(--gold); padding: 36px 40px; width: 440px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.5); transform: translateY(20px); transition: transform 0.25s; }
+  .modal-overlay.open .modal { transform: translateY(0); }
+  .modal h2 { font-family: 'Playfair Display', serif; font-size: 1.4rem; color: var(--text); margin-bottom: 6px; }
+  .modal p { font-size: 0.8rem; color: var(--muted); margin-bottom: 28px; }
+  .modal-field label { display: block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 6px; font-weight: 700; }
+  .modal-field input { width: 100%; background: var(--off); border: 1.5px solid var(--border); color: var(--text); padding: 12px 14px; border-radius: 10px; font-family: 'Playfair Display', serif; font-size: 1rem; outline: none; transition: border 0.2s; }
+  .modal-field input:focus { border-color: var(--gold); }
+  .modal-field input::placeholder { color: var(--muted); font-size: 0.85rem; font-family: 'Lato', sans-serif; }
+  .modal-actions { display: flex; gap: 12px; margin-top: 28px; }
+  .btn-confirm { flex: 1; padding: 12px; border-radius: 10px; background: linear-gradient(135deg, var(--gold-dark), var(--gold)); color: #fff; border: none; cursor: pointer; font-family: 'Lato', sans-serif; font-weight: 700; font-size: 0.9rem; letter-spacing: 0.06em; text-transform: uppercase; transition: opacity 0.2s; }
+  .btn-confirm:hover { opacity: 0.85; }
+  .btn-modal-cancel { padding: 12px 20px; border-radius: 10px; background: transparent; border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-family: 'Lato', sans-serif; font-size: 0.85rem; transition: all 0.2s; }
+  .btn-modal-cancel:hover { border-color: var(--red); color: var(--red); }
+  .vendor-preview { margin-top: 18px; background: var(--gold-ultra); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: none; }
+  .vendor-preview.show { display: flex; align-items: center; gap: 12px; }
+  .vp-icon { width: 40px; height: 40px; border-radius: 9px; background: var(--gold-pale); display: flex; align-items: center; justify-content: center; font-family: 'Playfair Display', serif; font-weight: 700; font-size: 0.9rem; color: var(--gold-dark); border: 1px solid var(--border); flex-shrink: 0; }
+  .vp-info { font-family: 'Playfair Display', serif; font-size: 0.9rem; color: var(--text); }
+  .vp-sub { font-size: 0.7rem; color: var(--muted); font-family: 'Lato', sans-serif; margin-top: 1px; }
+
+  /* FOLDER VIEW */
+  .folder-view-header { background: var(--white); border-bottom: 2px solid var(--gold); padding: 24px 36px; display: flex; align-items: flex-start; justify-content: space-between; }
+  .fvh-left h2 { font-family: 'Playfair Display', serif; font-size: 1.6rem; color: var(--text); }
+  .fvh-left p { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
+  .fvh-actions { display: flex; gap: 10px; align-items: center; }
+  .btn-print { padding: 9px 20px; border-radius: 8px; background: linear-gradient(135deg, var(--gold-dark), var(--gold)); color: #fff; border: none; cursor: pointer; font-family: 'Lato', sans-serif; font-weight: 700; font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase; box-shadow: 0 3px 12px rgba(139,105,20,0.35); transition: opacity 0.2s; }
+  .btn-print:hover { opacity: 0.85; }
+  .btn-del-vendor { padding: 9px 16px; border-radius: 8px; background: #FDECEA; border: 1px solid #F5C0BC; color: var(--red); cursor: pointer; font-family: 'Lato', sans-serif; font-weight: 700; font-size: 0.8rem; transition: opacity 0.2s; }
+  .btn-del-vendor:hover { opacity: 0.75; }
+
+  .month-strip { background: var(--gold-ultra); border-bottom: 1px solid var(--border); padding: 10px 36px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .month-strip label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-right: 6px; font-weight: 700; }
+  .mtab { padding: 5px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--white); font-family: 'Lato', sans-serif; font-size: 0.75rem; color: var(--muted); cursor: pointer; transition: all 0.15s; font-weight: 700; }
+  .mtab.active { background: var(--gold); border-color: var(--gold-dark); color: #fff; }
+  .mtab:hover:not(.active) { border-color: var(--gold); color: var(--gold-dark); }
+
+  .folder-body { padding: 28px 36px; }
+  .table-wrap { background: var(--white); border-radius: 14px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 4px 20px var(--shadow); margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: linear-gradient(135deg, #2C2010 0%, #3D2E0E 100%); }
+  thead th { font-size: 0.63rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--gold-light); font-weight: 700; padding: 12px 16px; text-align: left; }
+  tbody tr { border-bottom: 1px solid var(--gold-pale); transition: background 0.1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--gold-ultra); }
+  tbody td { padding: 11px 16px; font-size: 0.83rem; font-family: 'DM Mono', monospace; }
+  .td-name { font-family: 'Lato', sans-serif; font-weight: 700; font-size: 0.83rem; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; }
+  .badge-parc { background: var(--gold-pale); color: var(--gold-dark); border: 1px solid var(--border); }
+  .badge-perc { background: #EDF7ED; color: var(--green-ink); border: 1px solid #A8D5A2; }
+  .td-comm { color: var(--green-ink); font-weight: 700; }
+  .actions { display: flex; gap: 6px; }
+  .btn-sm { border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.72rem; font-family: 'Lato', sans-serif; font-weight: 700; transition: opacity 0.15s; }
+  .btn-edit-sm { background: var(--gold-pale); color: var(--gold-dark); border: 1px solid var(--border); }
+  .btn-del-sm { background: #FDECEA; color: var(--red); border: 1px solid #F5C0BC; }
+  .btn-sm:hover { opacity: 0.7; }
+  .table-footer-row { background: var(--gold-ultra); border-top: 2px solid var(--gold); padding: 14px 20px; display: flex; justify-content: flex-end; gap: 24px; align-items: center; }
+  .tf-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 700; }
+  .tf-val { font-family: 'DM Mono', monospace; font-size: 1.1rem; color: var(--green-ink); font-weight: 700; }
+
+  /* ADD FORM */
+  .add-form-bar { background: var(--white); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; box-shadow: 0 4px 20px var(--shadow); margin-bottom: 20px; }
+  .add-form-bar h3 { font-family: 'Playfair Display', serif; font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 16px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr 1.4fr 1fr; gap: 12px; align-items: end; }
+  .fg label { display: block; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 5px; font-weight: 700; }
+  .fg input, .fg select { width: 100%; background: var(--off); border: 1px solid var(--border); color: var(--text); padding: 9px 11px; border-radius: 8px; font-family: 'DM Mono', monospace; font-size: 0.82rem; outline: none; transition: border 0.2s; }
+  .fg input:focus, .fg select:focus { border-color: var(--gold); }
+  .seg-group { display: flex; flex-wrap: wrap; gap: 5px; }
+  .seg-btn { padding: 6px 8px; border: 1px solid var(--border); background: var(--off); color: var(--muted); border-radius: 7px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 0.72rem; transition: all 0.15s; user-select: none; text-align: center; }
+  .seg-btn.active { background: var(--gold); border-color: var(--gold-dark); color: #fff; font-weight: 700; }
+  .form-actions { display: flex; gap: 10px; align-items: flex-end; }
+  .btn-add-rec { padding: 9px 22px; border-radius: 8px; background: linear-gradient(135deg, var(--gold-dark), var(--gold)); color: #fff; border: none; cursor: pointer; font-family: 'Lato', sans-serif; font-weight: 700; font-size: 0.82rem; white-space: nowrap; transition: opacity 0.2s; }
+  .btn-add-rec:hover { opacity: 0.85; }
+  .btn-cancel-rec { padding: 9px 16px; border-radius: 8px; background: transparent; border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-family: 'Lato', sans-serif; font-size: 0.82rem; }
+  .preview-inline { font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--green-ink); margin-top: 4px; font-weight: 700; }
+
+  /* RECEIPT */
+  .receipt-box { background: var(--white); border: 1px solid var(--border); border-radius: 14px; padding: 28px 32px; box-shadow: 0 4px 20px var(--shadow); max-width: 520px; }
+  .receipt-box p { font-size: 0.9rem; color: var(--text); line-height: 1.6; margin-bottom: 28px; font-weight: 700; border-left: 3px solid var(--gold); padding-left: 12px; }
+  .receipt-lines { display: flex; flex-direction: column; gap: 16px; }
+  .receipt-line { display: flex; align-items: flex-end; gap: 8px; }
+  .receipt-line label { font-size: 0.82rem; font-weight: 700; color: var(--text); white-space: nowrap; min-width: 44px; }
+  .receipt-line .line { flex: 1; border-bottom: 1.5px solid #999; min-width: 160px; height: 22px; }
+  .receipt-date { display: flex; align-items: flex-end; gap: 6px; }
+  .receipt-date span { font-size: 0.82rem; font-weight: 700; color: var(--text); }
+  .receipt-date .slash { font-size: 1rem; color: var(--muted); line-height: 1; margin-bottom: 2px; }
+  .receipt-date .dline { width: 36px; border-bottom: 1.5px solid #999; height: 22px; }
+
+  @media print {
+    body { background: #fff !important; }
+    header, .sidebar, .fvh-actions, .month-strip, .add-form-bar, .actions, .btn-print, .btn-del-vendor, .modal-overlay { display: none !important; }
+    .app { display: block !important; }
+    .main { overflow: visible !important; }
+    .view { display: block !important; }
+    #homeView { display: none !important; }
+    .folder-body { padding: 20px !important; }
+    .folder-view-header { border: none !important; padding: 0 0 16px !important; }
+    .table-wrap, .receipt-box { box-shadow: none !important; border-color: #ccc !important; }
+    thead { background: #2C2010 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    thead th { color: #E8CC7A !important; }
+    tbody tr:hover { background: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="pgr-auth-screen" style="position:fixed;inset:0;background:#0a0a0a;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:Arial,Helvetica,sans-serif">
+  <div style="background:#111;border:1px solid rgba(201,168,76,0.25);border-radius:16px;padding:40px 36px;width:340px;max-width:88vw;text-align:center">
+    <div style="font-size:20px;font-weight:900;color:#e8c96a;margin-bottom:2px">GR Consórcio</div>
+    <div style="font-size:10.5px;color:#8a6f30;text-transform:uppercase;letter-spacing:.12em;margin-bottom:22px">Portal Interno · Acesso Restrito</div>
+    <input id="pgr-email" type="email" placeholder="E-mail" autocomplete="username" style="width:100%;background:#181818;border:1px solid #2a2a2a;color:#f0f0f0;border-radius:8px;padding:11px 13px;font-size:13px;margin-bottom:10px;outline:none;font-family:inherit;box-sizing:border-box">
+    <input id="pgr-pass" type="password" placeholder="Senha" autocomplete="current-password" onkeydown="if(event.key==='Enter')pgrLogin()" style="width:100%;background:#181818;border:1px solid #2a2a2a;color:#f0f0f0;border-radius:8px;padding:11px 13px;font-size:13px;margin-bottom:16px;outline:none;font-family:inherit;box-sizing:border-box">
+    <button onclick="pgrLogin()" id="pgr-btn" style="width:100%;background:#c9a84c;border:none;color:#0a0a0a;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Entrar</button>
+    <div id="pgr-err" style="color:#ef4444;font-size:11.5px;margin-top:12px;min-height:14px"></div>
+  </div>
+</div>
+<div id="pgr-nav-bar" style="position:sticky;top:0;z-index:500;background:#0d0d0d;border-bottom:1px solid rgba(201,168,76,0.2);padding:7px 16px;display:none;align-items:center;gap:16px;font-family:Arial,Helvetica,sans-serif;font-size:11.5px;flex-wrap:wrap">
+  <span style="color:#8a6f30;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:10px">Portal GR</span>
+  <a href="gr.html" class="pgr-nav-link" data-pg="gr" style="color:#c9a84c;text-decoration:none">GR</a>
+  <a href="gro.html" class="pgr-nav-link" data-pg="gro" style="color:#c9a84c;text-decoration:none">GRO</a>
+  <a href="comissoes.html" class="pgr-nav-link" data-pg="comissoes" style="color:#e8c96a;text-decoration:none;font-weight:700">Comissões</a>
+  <span style="flex:1"></span>
+  <span id="pgr-user-label" style="color:#707070"></span>
+  <a href="#" onclick="pgrLogout();return false" style="color:#ef4444;text-decoration:none">Sair</a>
+</div>
+
+<header>
+  <div class="header-left">
+    <h1>📁 Planilha de Comissões</h1>
+    <p>Gestão por consultor · Salvamento automático</p>
+  </div>
+  <div class="header-right">
+    <div class="backup-bar">
+      <button class="btn-backup btn-back-hist" onclick="abrirHistorico()">🕘 Histórico</button>
+      <button class="btn-backup btn-back-import" onclick="importarJSONClick()">⬆ Importar JSON</button>
+      <button class="btn-backup btn-back-export" onclick="exportarJSON()">⬇ Exportar JSON</button>
+      <button class="btn-backup btn-back-html" onclick="salvarHTML()">💾 Salvar HTML</button>
+      <input type="file" id="importJsonInput" accept="application/json,.json" style="display:none" onchange="importarJSONFile(event)">
+    </div>
+    <span class="save-badge" id="saveBadge">💾 Salvo automaticamente</span>
+  </div>
+</header>
+
+<!-- MODAL IMPORTAR JSON -->
+<div class="modal-overlay" id="importModalOverlay" onclick="closeImportModalOutside(event)">
+  <div class="modal" style="width:480px">
+    <h2>⬆ Importar Backup JSON</h2>
+    <p id="importModalInfo">—</p>
+    <div class="modal-field" style="margin-bottom:6px">
+      <label>Como importar</label>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">
+        <label class="import-mode-opt">
+          <input type="radio" name="importMode" value="substituir" checked="">
+          <span><b>Substituir tudo</b><br><span class="imo-sub">Apaga os dados atuais deste navegador e usa somente os do arquivo importado.</span></span>
+        </label>
+        <label class="import-mode-opt">
+          <input type="radio" name="importMode" value="mesclar">
+          <span><b>Mesclar com os dados atuais</b><br><span class="imo-sub">Mantém os registros e vendedores já existentes e adiciona os do arquivo (ignora registros com ID repetido).</span></span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-confirm" onclick="confirmarImportacao()">Importar</button>
+      <button class="btn-modal-cancel" onclick="closeImportModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL HISTÓRICO DE BACKUP -->
+<div class="modal-overlay" id="histModalOverlay" onclick="closeHistModalOutside(event)">
+  <div class="modal" style="width:520px">
+    <h2>🕘 Histórico de Backups</h2>
+    <p>Log local (neste navegador) das últimas ações de importação/exportação. Isso NÃO é um backup em si — é só um registro de quando cada backup foi feito.</p>
+    <div id="histList" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:20px"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" style="flex:1" onclick="limparHistoricoBackup()">🗑 Limpar Histórico</button>
+      <button class="btn-confirm" style="flex:1" onclick="closeHistModal()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL NOVO VENDEDOR -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <h2>➕ Novo Vendedor</h2>
+    <p>Crie uma pasta para um novo consultor.</p>
+    <div class="modal-field">
+      <label>Nome do Consultor</label>
+      <input type="text" id="newVendorName" placeholder="Ex: PAULA, DAYANNE..." oninput="previewVendor()" onkeydown="if(event.key==='Enter')confirmNewVendor()">
+    </div>
+    <div class="vendor-preview" id="vendorPreview">
+      <div class="vp-icon" id="vpIcon">—</div>
+      <div>
+        <div class="vp-info" id="vpName">—</div>
+        <div class="vp-sub">Nova pasta será criada</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-confirm" onclick="confirmNewVendor()">Criar Pasta</button>
+      <button class="btn-modal-cancel" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div class="app">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-title">📂 Consultores</div>
+    <div id="folderList"></div>
+    <div class="sidebar-actions">
+      <button class="btn-sidebar btn-new-vendor" onclick="openModal()">＋ Adicionar Vendedor</button>
+      <button class="btn-sidebar btn-home" onclick="showHome()">⟵ Visão Geral</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- HOME -->
+    <div class="view active" id="homeView">
+      <div class="home-header">
+        <h2>Visão Geral</h2>
+        <p>Selecione um consultor na barra lateral ou clique em um card abaixo</p>
+      </div>
+      <div class="month-tabs" id="homeMonthTabs" style="display:flex;gap:8px;flex-wrap:wrap;padding:0 36px 16px;"></div>
+      <div class="cards-grid">
+        <div class="dash-card">
+          <div class="label">Total de Comissões</div>
+          <div class="val" id="hTotalAll">R$ 0,00</div>
+          <div class="sub">Todos os consultores</div>
+        </div>
+        <div class="dash-card">
+          <div class="label">Consultores</div>
+          <div class="val" id="hTotalC">0</div>
+          <div class="sub">Pastas ativas</div>
+        </div>
+        <div class="dash-card">
+          <div class="label">Total de Registros</div>
+          <div class="val" id="hTotalR">0</div>
+          <div class="sub">Lançamentos</div>
+        </div>
+      </div>
+      <div style="padding: 0 36px 12px; font-family:'Playfair Display',serif; font-size:1rem; color:var(--muted); font-style:italic;">Pastas dos Consultores</div>
+      <div class="consultants-grid" id="consultantCards"></div>
+    </div>
+
+    <!-- FOLDER VIEW -->
+    <div class="view" id="folderView">
+      <div class="folder-view-header">
+        <div class="fvh-left">
+          <h2 id="fvName">—</h2>
+          <p id="fvSub">—</p>
+        </div>
+        <div class="fvh-actions">
+          <button class="btn-del-vendor" onclick="deleteVendor()">🗑 Remover Vendedor</button>
+          <button class="btn-print" onclick="window.print()">🖨️ Imprimir Pasta</button>
+        </div>
+      </div>
+      <div class="month-strip">
+        <label>Mês:</label>
+        <div id="monthTabs"></div>
+      </div>
+      <div class="folder-body">
+        <div class="add-form-bar">
+          <h3 id="formTitle">＋ Adicionar Registro</h3>
+          <input type="hidden" id="editId">
+          <div class="form-grid">
+            <div class="fg"><label>Mês Referência</label><input type="month" id="fMonth"></div>
+            <div class="fg"><label>Cliente</label><input type="text" id="fClient" placeholder="Nome do cliente..."></div>
+            <div class="fg">
+              <label>Crédito (R$)</label>
+              <input type="number" id="fCredit" placeholder="0,00" step="0.01" min="0" oninput="calcPreview()">
+              <div class="preview-inline" id="previewVal">Comissão: R$ 0,00</div>
+            </div>
+            <div class="fg">
+              <label>Parcela</label>
+              <div class="seg-group" id="segParc">
+                <div class="seg-btn active" data-val="1/2">1/2</div>
+                <div class="seg-btn" data-val="2/2">2/2</div>
+                <div class="seg-btn" data-val="1/3">1/3</div>
+                <div class="seg-btn" data-val="2/3">2/3</div>
+                <div class="seg-btn" data-val="3/3">3/3</div>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:20px;align-items:flex-end;flex-wrap:wrap;">
+            <div class="fg">
+              <label>% Comissão</label>
+              <div class="seg-group" id="segPerc">
+                <div class="seg-btn" data-val="0.20">0,20%</div>
+                <div class="seg-btn active" data-val="0.35">0,35%</div>
+                <div class="seg-btn" data-val="0.25">0,25%</div>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn-add-rec" id="btnAdd" onclick="addRecord()">Adicionar</button>
+              <button class="btn-cancel-rec" id="btnCancel" onclick="cancelEdit()" style="display:none">Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Nº</th><th>Mês</th><th>Cliente</th><th>Parcela</th><th>Crédito</th><th>%</th><th>Comissão</th><th></th></tr></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+          <div id="emptyRow" style="display:none;padding:32px;text-align:center;color:var(--muted);font-size:0.9rem;">Nenhum registro nesta pasta. Adicione o primeiro acima!</div>
+          <div class="table-footer-row">
+            <span class="tf-label">Total do período:</span>
+            <span class="tf-val" id="filteredTotal">R$ 0,00</span>
+          </div>
+        </div>
+
+        <div class="receipt-box">
+          <p>Conheço e recebi as comissões acima.</p>
+          <div class="receipt-lines">
+            <div class="receipt-line"><label>ASS:</label><div class="line"></div></div>
+            <div class="receipt-line">
+              <label>DATA:</label>
+              <div class="receipt-date">
+                <div class="dline"></div><span class="slash">/</span>
+                <div class="dline"></div><span class="slash">/</span>
+                <div class="dline" style="width:52px"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let records = [];
+  let vendors = [];
+  let activeConsultant = null;
+  let activeMonthFilter = '';
+  let activeHomeMonthFilter = '';
+  let selectedParc = '1/2';
+  let selectedPerc = '0.35';
+
+  // ══════════════════════════════════════════
+  // PORTAL GR — LOGIN + SINCRONIZAÇÃO SUPABASE
+  // Mesmo projeto/login do CRM (auth.users compartilhado) — acesso restrito
+  // aos 2 IDs abaixo, sem tela de cadastro. Fonte de verdade passa a ser o
+  // Supabase (tabela portal_comissoes_estado); o localStorage continua como
+  // backup local automático (offline-first) — se a nuvem falhar, o app segue
+  // funcionando com o que já tinha salvo aqui.
+  // ══════════════════════════════════════════
+  const PGR_URL='https://prquggwhjcvenzuziaox.supabase.co';
+  const PGR_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBycXVnZ3doamN2ZW56dXppYW94Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMTUzMDUsImV4cCI6MjA5Mzc5MTMwNX0.vjbVhGIUowS6AGE1Uf5uDutCMI193mhgra3GSwlqMec';
+  const PGR_ALLOWED=['8499c7b5-8e70-4fb8-8a36-ce7aa29aede6','10b1fc08-4460-46e1-ac0a-53c13984c9d7'];
+  const {createClient:pgrCreateClient}=supabase;
+  const pgrSb=pgrCreateClient(PGR_URL,PGR_KEY);
+  let pgrCurUser=null;
+  let pgrCloudTimer=null;
+
+  async function pgrLogin(){
+    const email=(document.getElementById('pgr-email').value||'').trim();
+    const pass=document.getElementById('pgr-pass').value||'';
+    const errEl=document.getElementById('pgr-err');
+    const btn=document.getElementById('pgr-btn');
+    errEl.textContent='';
+    if(!email||!pass){errEl.textContent='Informe e-mail e senha';return;}
+    btn.disabled=true;btn.textContent='Entrando...';
+    const{data,error}=await pgrSb.auth.signInWithPassword({email,password:pass});
+    btn.disabled=false;btn.textContent='Entrar';
+    if(error){errEl.textContent='E-mail ou senha inválidos';return;}
+    if(!PGR_ALLOWED.includes(data.user.id)){
+      await pgrSb.auth.signOut();
+      errEl.textContent='Acesso restrito — este login não tem permissão pro Portal GR';
+      return;
+    }
+    await pgrOnAuthed(data.user);
+  }
+  async function pgrLogout(){
+    await pgrSb.auth.signOut();
+    location.reload();
+  }
+  async function pgrCheckAuth(){
+    const{data:{session}}=await pgrSb.auth.getSession();
+    if(session&&PGR_ALLOWED.includes(session.user.id)){
+      await pgrOnAuthed(session.user);
+    } else {
+      if(session) await pgrSb.auth.signOut();
+      document.getElementById('pgr-auth-screen').style.display='flex';
+    }
+  }
+  async function pgrOnAuthed(user){
+    pgrCurUser=user;
+    document.getElementById('pgr-auth-screen').style.display='none';
+    const navBar=document.getElementById('pgr-nav-bar');
+    if(navBar) navBar.style.display='flex';
+    const lbl=document.getElementById('pgr-user-label');
+    if(lbl) lbl.textContent=user.email;
+    await pgrInitApp();
+  }
+  // Carrega do localStorage primeiro (offline-first)...
+  function pgrLoadLocal(){
+    try{ records=JSON.parse(localStorage.getItem('comm_v3_records')||'[]'); }catch(e){ records=[]; }
+    try{ vendors=JSON.parse(localStorage.getItem('comm_v3_vendors')||'[]'); }catch(e){ vendors=[]; }
+  }
+  // ...depois busca a nuvem — se tiver dado, substitui (nuvem é a fonte de verdade quando disponível).
+  async function pgrPullCloud(){
+    try{
+      const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados').eq('chave','default').maybeSingle();
+      if(error) throw error;
+      if(data&&data.dados&&(data.dados.records?.length||data.dados.vendors?.length)){
+        records=data.dados.records||[];
+        vendors=data.dados.vendors||[];
+        localStorage.setItem('comm_v3_records',JSON.stringify(records));
+        localStorage.setItem('comm_v3_vendors',JSON.stringify(vendors));
+      }
+    }catch(e){
+      console.warn('[Portal GR] Falha ao buscar da nuvem, usando dados locais:',e.message);
+    }
+  }
+  function pgrPushCloud(){
+    clearTimeout(pgrCloudTimer);
+    pgrCloudTimer=setTimeout(async()=>{
+      try{
+        const{error}=await pgrSb.from('portal_comissoes_estado').update({
+          dados:{records,vendors},updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null
+        }).eq('chave','default');
+        if(error) throw error;
+      }catch(e){
+        console.warn('[Portal GR] Falha ao salvar na nuvem (dados continuam salvos localmente):',e.message);
+      }
+    },800);
+  }
+
+  function fmt(v) { return 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function fmtMonth(m) {
+    if(!m) return '';
+    const [y,mo]=m.split('-');
+    return ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+mo-1]+'/'+y;
+  }
+  function initials(name) { return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+
+  function save() {
+    localStorage.setItem('comm_v3_records', JSON.stringify(records));
+    localStorage.setItem('comm_v3_vendors', JSON.stringify(vendors));
+    const b=document.getElementById('saveBadge');
+    b.textContent='✅ Salvo '+new Date().toLocaleTimeString('pt-BR');
+    setTimeout(()=>b.textContent='💾 Salvo automaticamente',2500);
+    pgrPushCloud();
+  }
+
+  // ═══ BACKUP: HISTÓRICO / IMPORTAR / EXPORTAR / SALVAR HTML ═══
+  // IMPORTANTE: tudo aqui roda 100% no navegador. Não existe servidor nem
+  // nuvem — os dados normais ficam só no localStorage deste navegador/máquina.
+  // Se limpar dados de navegação ou trocar de computador, perde tudo que não
+  // tiver sido exportado como arquivo (JSON ou HTML). O "Histórico" abaixo é
+  // só um LOG de quando cada backup foi feito, não é o backup em si.
+
+  function backupLog(action, detail){
+    let log = JSON.parse(localStorage.getItem('comm_v3_backup_log') || '[]');
+    log.unshift({ action, detail, date: new Date().toISOString() });
+    if(log.length > 50) log = log.slice(0, 50);
+    localStorage.setItem('comm_v3_backup_log', JSON.stringify(log));
+  }
+
+  function jsonSeguroParaScript(obj){
+    // Evita que "<\/script>" dentro dos dados quebre o HTML gerado no Salvar HTML
+    return JSON.stringify(obj).replace(/</g, '\\u003c');
+  }
+
+  function exportarJSON(){
+    const payload = {
+      formato: 'comm_v3_backup',
+      exportadoEm: new Date().toISOString(),
+      vendors, records
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    const a = document.createElement('a');
+    a.href = url; a.download = `backup-comissoes-${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    backupLog('Exportar JSON', `${records.length} registro(s) · ${vendors.length} vendedor(es)`);
+  }
+
+  function importarJSONClick(){
+    document.getElementById('importJsonInput').value = '';
+    document.getElementById('importJsonInput').click();
+  }
+
+  let _importPendingData = null;
+
+  function importarJSONFile(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      let data;
+      try { data = JSON.parse(ev.target.result); }
+      catch(err){ alert('Arquivo inválido: não é um JSON legível.\n\n'+err.message); return; }
+      if(!data || !Array.isArray(data.records) || !Array.isArray(data.vendors)){
+        alert('Arquivo inválido: precisa conter os campos "records" e "vendors" (formato gerado pelo próprio "Exportar JSON" desta planilha).');
+        return;
+      }
+      _importPendingData = data;
+      document.getElementById('importModalInfo').textContent =
+        `Arquivo: ${data.records.length} registro(s), ${data.vendors.length} vendedor(es)`+
+        (data.exportadoEm ? ` · exportado em ${new Date(data.exportadoEm).toLocaleString('pt-BR')}` : '');
+      document.querySelector('input[name="importMode"][value="substituir"]').checked = true;
+      document.getElementById('importModalOverlay').classList.add('open');
+    };
+    reader.onerror = () => alert('Não foi possível ler o arquivo.');
+    reader.readAsText(file);
+  }
+
+  function closeImportModal(){ document.getElementById('importModalOverlay').classList.remove('open'); _importPendingData=null; }
+  function closeImportModalOutside(e){ if(e.target===document.getElementById('importModalOverlay')) closeImportModal(); }
+
+  function confirmarImportacao(){
+    if(!_importPendingData) return;
+    const modo = document.querySelector('input[name="importMode"]:checked').value;
+    const data = _importPendingData;
+    if(modo === 'substituir'){
+      if(!confirm(`Isso vai APAGAR os ${records.length} registro(s) e ${vendors.length} vendedor(es) atuais e substituir pelos do arquivo. Confirma?`)) return;
+      records = data.records;
+      vendors = data.vendors;
+    } else {
+      const idsExistentes = new Set(records.map(r=>r.id));
+      const novos = data.records.filter(r=>!idsExistentes.has(r.id));
+      records = [...records, ...novos];
+      vendors = [...new Set([...vendors, ...data.vendors])];
+    }
+    save();
+    backupLog(`Importar JSON (${modo==='substituir'?'substituiu tudo':'mesclou'})`, `${data.records.length} registro(s) · ${data.vendors.length} vendedor(es) no arquivo`);
+    closeImportModal();
+    showHome(); renderSidebar(); renderHome();
+    alert('Importação concluída.');
+  }
+
+  function salvarHTML(){
+    // Gera uma cópia autônoma (standalone) desta página com os dados ATUAIS
+    // já embutidos no código — não depende de localStorage pra abrir depois,
+    // então funciona como um backup completo em outro computador.
+    let html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+    const reRecords = /let records = JSON\.parse\(localStorage\.getItem\('comm_v3_records'\) \|\| '\[\]'\);/;
+    const reVendors = /let vendors = JSON\.parse\(localStorage\.getItem\('comm_v3_vendors'\) \|\| '\[\]'\);/;
+    if(!reRecords.test(html) || !reVendors.test(html)){
+      alert('Não consegui localizar o ponto de injeção dos dados no HTML. O "Salvar HTML" foi cancelado pra não gerar um arquivo incompleto ou corrompido — use o Exportar JSON como backup por enquanto.');
+      return;
+    }
+    html = html.replace(reRecords, `let records = ${jsonSeguroParaScript(records)};`);
+    html = html.replace(reVendors, `let vendors = ${jsonSeguroParaScript(vendors)};`);
+    const blob = new Blob([html], {type:'text/html'});
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    const a = document.createElement('a');
+    a.href = url; a.download = `backup-comissoes-${stamp}.html`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    backupLog('Salvar HTML', `Snapshot com ${records.length} registro(s) · ${vendors.length} vendedor(es)`);
+  }
+
+  function abrirHistorico(){
+    const log = JSON.parse(localStorage.getItem('comm_v3_backup_log') || '[]');
+    const list = document.getElementById('histList');
+    list.innerHTML = log.length ? log.map(h=>`
+      <div class="hist-item">
+        <div class="hi-top">
+          <span class="hi-action">${h.action}</span>
+          <span class="hi-date">${new Date(h.date).toLocaleString('pt-BR')}</span>
+        </div>
+        <div class="hi-detail">${h.detail||''}</div>
+      </div>`).join('')
+      : '<div style="color:var(--muted);font-size:0.85rem;padding:12px 0">Nenhum backup registrado ainda neste navegador.</div>';
+    document.getElementById('histModalOverlay').classList.add('open');
+  }
+  function closeHistModal(){ document.getElementById('histModalOverlay').classList.remove('open'); }
+  function closeHistModalOutside(e){ if(e.target===document.getElementById('histModalOverlay')) closeHistModal(); }
+  function limparHistoricoBackup(){
+    if(!confirm('Limpar o histórico de backups (só o log, não afeta seus dados)?')) return;
+    localStorage.removeItem('comm_v3_backup_log');
+    abrirHistorico();
+  }
+
+  // MODAL
+  function openModal() {
+    document.getElementById('newVendorName').value='';
+    document.getElementById('vendorPreview').classList.remove('show');
+    document.getElementById('modalOverlay').classList.add('open');
+    setTimeout(()=>document.getElementById('newVendorName').focus(),200);
+  }
+  function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+  function closeModalOutside(e) { if(e.target===document.getElementById('modalOverlay')) closeModal(); }
+  function previewVendor() {
+    const name=document.getElementById('newVendorName').value.trim().toUpperCase();
+    const prev=document.getElementById('vendorPreview');
+    if(name.length>1) {
+      prev.classList.add('show');
+      document.getElementById('vpIcon').textContent=initials(name);
+      document.getElementById('vpName').textContent=name;
+    } else { prev.classList.remove('show'); }
+  }
+  function confirmNewVendor() {
+    const name=document.getElementById('newVendorName').value.trim().toUpperCase();
+    if(!name) { alert('Digite o nome do consultor!'); return; }
+    if(vendors.includes(name)) { alert('Este consultor já existe!'); return; }
+    vendors.push(name);
+    save(); closeModal();
+    renderSidebar(); renderHome();
+    openFolder(name);
+  }
+
+  // SEGS
+  document.querySelectorAll('#segParc .seg-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('#segParc .seg-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active'); selectedParc=btn.dataset.val;
+  }));
+  document.querySelectorAll('#segPerc .seg-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('#segPerc .seg-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active'); selectedPerc=btn.dataset.val; calcPreview();
+  }));
+  function calcPreview() {
+    const c=parseFloat(document.getElementById('fCredit').value)||0;
+    document.getElementById('previewVal').textContent='Comissão: '+fmt(c*(parseFloat(selectedPerc)/100));
+  }
+  function setSegParc(v){selectedParc=v;document.querySelectorAll('#segParc .seg-btn').forEach(b=>b.classList.toggle('active',b.dataset.val===v));}
+  function setSegPerc(v){selectedPerc=v;document.querySelectorAll('#segPerc .seg-btn').forEach(b=>b.classList.toggle('active',b.dataset.val===v));calcPreview();}
+
+  // NAVIGATION
+  function showHome() {
+    activeConsultant=null;
+    document.getElementById('homeView').classList.add('active');
+    document.getElementById('folderView').classList.remove('active');
+    document.querySelectorAll('.folder').forEach(f=>f.classList.remove('active'));
+    renderHome();
+  }
+  function openFolder(consultant) {
+    activeConsultant=consultant; activeMonthFilter='';
+    document.getElementById('homeView').classList.remove('active');
+    document.getElementById('folderView').classList.add('active');
+    document.querySelectorAll('.folder').forEach(f=>f.classList.toggle('active',f.dataset.consultant===consultant));
+    renderFolder();
+  }
+
+  function deleteVendor() {
+    if(!activeConsultant) return;
+    const count = records.filter(r=>r.consultant===activeConsultant).length;
+    const msg = count>0
+      ? `Remover o vendedor "${activeConsultant}" e seus ${count} registros? Esta ação não pode ser desfeita.`
+      : `Remover a pasta de "${activeConsultant}"?`;
+    if(!confirm(msg)) return;
+    vendors = vendors.filter(v=>v!==activeConsultant);
+    records = records.filter(r=>r.consultant!==activeConsultant);
+    save(); showHome();
+  }
+
+  // HOME
+  function renderHome() {
+    const allVendors=[...new Set([...vendors,...records.map(r=>r.consultant)])].sort();
+    const months=[...new Set(records.map(r=>r.month))].sort().reverse();
+    const tabs=document.getElementById('homeMonthTabs');
+    tabs.innerHTML=`<button class="mtab ${activeHomeMonthFilter===''?'active':''}" onclick="setHomeMonthFilter('')">Período Total</button>`+
+      months.map(m=>`<button class="mtab ${activeHomeMonthFilter===m?'active':''}" onclick="setHomeMonthFilter('${m}')">${fmtMonth(m)}</button>`).join('');
+    const filtered=activeHomeMonthFilter?records.filter(r=>r.month===activeHomeMonthFilter):records;
+    const total=filtered.reduce((s,r)=>s+r.commission,0);
+    // "Consultores" conta quem tem registro DENTRO do período filtrado (não a lista geral de pastas),
+    // pra refletir de fato quem vendeu naquele mês — senão o número nunca mudaria com o filtro.
+    const consultoresNoPeriodo=[...new Set(filtered.map(r=>r.consultant))];
+    document.getElementById('hTotalAll').textContent=fmt(total);
+    document.getElementById('hTotalC').textContent=consultoresNoPeriodo.length;
+    document.getElementById('hTotalR').textContent=filtered.length;
+    const cards=document.getElementById('consultantCards');
+    cards.innerHTML=allVendors.map(c=>{
+      const recs=filtered.filter(r=>r.consultant===c);
+      const tot=recs.reduce((s,r)=>s+r.commission,0);
+      return `<div class="consultant-card" onclick="openFolder('${c}')">
+        <div class="cc-icon">${initials(c)}</div>
+        <div>
+          <div class="cc-name">${c}</div>
+          <div class="cc-total">${fmt(tot)}</div>
+          <div class="cc-count">${recs.length} registro${recs.length!==1?'s':''}</div>
+        </div>
+      </div>`;
+    }).join('')||'<div style="color:var(--muted);font-size:0.9rem;padding:20px">Nenhum consultor. Clique em "Adicionar Vendedor".</div>';
+  }
+  function setHomeMonthFilter(m){activeHomeMonthFilter=m;renderHome();}
+
+  function renderSidebar() {
+    const allVendors=[...new Set([...vendors,...records.map(r=>r.consultant)])].sort();
+    const list=document.getElementById('folderList');
+    list.innerHTML=allVendors.map(c=>{
+      const tot=records.filter(r=>r.consultant===c).reduce((s,r)=>s+r.commission,0);
+      return `<div class="folder ${activeConsultant===c?'active':''}" data-consultant="${c}" onclick="openFolder('${c}')">
+        <div class="folder-tab">
+          <span class="folder-icon">📁</span>
+          <span class="folder-name">${c}</span>
+          <span class="folder-total">${fmt(tot)}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderFolder() {
+    if(!activeConsultant) return;
+    const allForC=records.filter(r=>r.consultant===activeConsultant);
+    const months=[...new Set(allForC.map(r=>r.month))].sort().reverse();
+    document.getElementById('fvName').textContent='📁 '+activeConsultant;
+    const tot=allForC.reduce((s,r)=>s+r.commission,0);
+    document.getElementById('fvSub').textContent=`${allForC.length} registro${allForC.length!==1?'s':''} · Total: ${fmt(tot)}`;
+    const tabs=document.getElementById('monthTabs');
+    tabs.innerHTML=`<button class="mtab ${activeMonthFilter===''?'active':''}" onclick="setMonthFilter('')">Todos</button>`+
+      months.map(m=>`<button class="mtab ${activeMonthFilter===m?'active':''}" onclick="setMonthFilter('${m}')">${fmtMonth(m)}</button>`).join('');
+    const filtered=activeMonthFilter?allForC.filter(r=>r.month===activeMonthFilter):allForC;
+    const tbody=document.getElementById('tableBody');
+    const empty=document.getElementById('emptyRow');
+    if(filtered.length===0){tbody.innerHTML='';empty.style.display='block';}
+    else {
+      empty.style.display='none';
+      tbody.innerHTML=filtered.map((r,i)=>`
+        <tr>
+          <td style="color:var(--muted);font-size:0.75rem">${i+1}</td>
+          <td style="font-size:0.75rem;color:var(--muted)">${fmtMonth(r.month)}</td>
+          <td class="td-name">${r.client}</td>
+          <td><span class="badge badge-parc">${r.parc}</span></td>
+          <td>${fmt(r.credit)}</td>
+          <td><span class="badge badge-perc">${parseFloat(r.perc).toFixed(2).replace('.',',')}%</span></td>
+          <td class="td-comm">${fmt(r.commission)}</td>
+          <td><div class="actions">
+            <button class="btn-sm btn-edit-sm" onclick="editRecord(${r.id})">✏️</button>
+            <button class="btn-sm btn-del-sm" onclick="deleteRecord(${r.id})">🗑</button>
+          </div></td>
+        </tr>`).join('');
+    }
+    document.getElementById('filteredTotal').textContent=fmt(filtered.reduce((s,r)=>s+r.commission,0));
+    renderSidebar(); renderHome();
+  }
+
+  function setMonthFilter(m){activeMonthFilter=m;renderFolder();}
+
+  function addRecord() {
+    const month=document.getElementById('fMonth').value;
+    const client=document.getElementById('fClient').value.trim();
+    const credit=parseFloat(document.getElementById('fCredit').value);
+    if(!month||!client||isNaN(credit)||credit<=0){alert('Preencha todos os campos!');return;}
+    const commission=credit*(parseFloat(selectedPerc)/100);
+    const editId=document.getElementById('editId').value;
+    if(editId){
+      const idx=records.findIndex(r=>r.id==editId);
+      if(idx!==-1) records[idx]={...records[idx],consultant:activeConsultant,month,client,credit,parc:selectedParc,perc:selectedPerc,commission};
+    } else {
+      records.push({id:Date.now(),consultant:activeConsultant,month,client,credit,parc:selectedParc,perc:selectedPerc,commission});
+    }
+    save(); cancelEdit(); renderFolder();
+  }
+  function cancelEdit(){
+    document.getElementById('fClient').value='';document.getElementById('fCredit').value='';
+    document.getElementById('editId').value='';document.getElementById('previewVal').textContent='Comissão: R$ 0,00';
+    document.getElementById('formTitle').textContent='＋ Adicionar Registro';
+    document.getElementById('btnAdd').textContent='Adicionar';
+    document.getElementById('btnCancel').style.display='none';
+    setSegParc('1/2');setSegPerc('0.35');
+  }
+  function editRecord(id){
+    const r=records.find(r=>r.id==id);if(!r)return;
+    document.getElementById('fMonth').value=r.month;document.getElementById('fClient').value=r.client;
+    document.getElementById('fCredit').value=r.credit;document.getElementById('editId').value=r.id;
+    setSegParc(r.parc);setSegPerc(r.perc);
+    document.getElementById('formTitle').textContent='✏️ Editando Registro';
+    document.getElementById('btnAdd').textContent='Salvar';
+    document.getElementById('btnCancel').style.display='block';
+    document.getElementById('fClient').focus();calcPreview();
+  }
+  function deleteRecord(id){
+    if(!confirm('Remover este registro?'))return;
+    records=records.filter(r=>r.id!=id);save();renderFolder();
+  }
+
+  // INIT — só roda depois de autenticar (ver pgrCheckAuth/pgrOnAuthed acima)
+  async function pgrInitApp(){
+    document.getElementById('fMonth').value=new Date().toISOString().slice(0,7);
+    pgrLoadLocal();
+    await pgrPullCloud();
+    renderSidebar(); renderHome();
+  }
+  pgrCheckAuth();
+</script>
+
+
+</body></html>
