@@ -573,6 +573,7 @@ tfoot td{
     <div class="nav-item" onclick="nav('financeiro',this)" title="Financeiro"><span class="nav-icon">💰</span><span class="nav-label">Financeiro</span></div>
     <div class="nav-sect">Clientes</div>
     <div class="nav-item" onclick="nav('pagamentos',this)" title="Pagamentos" id="nav-pagamentos"><span class="nav-icon">💳</span><span class="nav-label">Pagamentos</span></div>
+    <div class="nav-item" onclick="nav('redutor',this)" title="Redutor"><span class="nav-icon">📉</span><span class="nav-label">Redutor</span></div>
     <div class="nav-item" onclick="nav('cancelados',this)" id="nav-cancelados" title="Cancelados"><span class="nav-icon">🚫</span><span class="nav-label">Cancelados <span id="canc-nav-count" style="opacity:.6;font-size:10px"></span></span></div>
     <div class="nav-sect">Vendas</div>
     <div class="nav-item" onclick="nav('vendas',this)" title="Vendas Mensais"><span class="nav-icon">📈</span><span class="nav-label">Vendas Mensais</span></div>
@@ -748,6 +749,27 @@ tfoot td{
               <tr><th>Data</th><th>Cliente</th><th>Consultor</th><th>Carta</th><th>1ª</th><th>2ª</th><th>3ª</th><th>4ª</th><th>5ª</th><th>6ª</th><th></th></tr>
             </thead>
             <tbody id="pag-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ REDUTOR ════ -->
+  <div id="page-redutor" class="page">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">Redutor de Comissão</div>
+        <input class="inp" id="redutor-srch" placeholder="Buscar cliente ou consultor..." style="max-width:280px;margin:0" oninput="renderRedutorTab()">
+      </div>
+      <div style="padding:10px 18px;font-size:11px;color:var(--muted2);line-height:1.6;border-bottom:1px solid var(--border-gold)">
+        25% = comissão integral (0,35% sobre o valor cheio). 50% = comissão pela metade (0,175%). Se a 1ª ou 2ª parcela já estiver PAGO, a comissão automática é lançada (ou atualizada/removida) assim que o redutor for definido aqui.
+      </div>
+      <div class="panel-body-np">
+        <div class="t-wrap">
+          <table>
+            <thead><tr><th>Cliente</th><th>Consultor</th><th>Carta</th><th>1ª</th><th>2ª</th><th>Redutor</th></tr></thead>
+            <tbody id="redutor-tbody"></tbody>
           </table>
         </div>
       </div>
@@ -1263,6 +1285,57 @@ function pgrAtualizarListaVendedores(){
   dl.innerHTML=[...nomes].sort().map(n=>`<option value="${n}">`).join('');
 }
 
+// ══════════════════════════════════════════
+// ABA REDUTOR — lista todos os clientes (todas as abas de Pagamentos) pra
+// definir o Redutor (25%/50%) individualmente. Como a maioria dos clientes
+// já está com parcela 1/2 PAGO, definir o redutor aqui dispara a checagem de
+// comissão automática na hora (mesma regra de pgrCheckComissaoAuto). Se o
+// redutor for removido depois, a comissão automática lançada é apagada.
+// ══════════════════════════════════════════
+function renderRedutorTab(){
+  const tbody=document.getElementById('redutor-tbody');
+  if(!tbody) return;
+  const q=(document.getElementById('redutor-srch')?.value||'').toLowerCase().trim();
+  const tabs=D.pag_tabs||['d10','d16','d20','d25'];
+  let rows=[];
+  tabs.forEach(tab=>{
+    (D.pagamentos[tab]||[]).forEach((r,ri)=>rows.push({tab,ri,r}));
+  });
+  if(q) rows=rows.filter(({r})=>(r.cliente||'').toLowerCase().includes(q)||(r.consultor||'').toLowerCase().includes(q));
+  // Sem redutor definido aparece primeiro, pra facilitar o preenchimento em massa
+  rows.sort((a,b)=>(a.r.redutor?1:0)-(b.r.redutor?1:0)||(a.r.cliente||'').localeCompare(b.r.cliente||''));
+  tbody.innerHTML=rows.map(({tab,ri,r})=>{
+    const s1=r.p?.[0]?.s||'—', s2=r.p?.[1]?.s||'—';
+    const stColor=s=>s==='PAGO'?'var(--green)':s==='CANCELADO'?'var(--red)':'var(--yellow)';
+    return`<tr>
+      <td>${r.cliente||'—'}</td>
+      <td>${r.consultor||'<span style="color:var(--muted2)">—</span>'}</td>
+      <td style="white-space:nowrap">${r.valor?brlk(+r.valor):'—'}</td>
+      <td style="color:${stColor(s1)}">${s1}</td>
+      <td style="color:${stColor(s2)}">${s2}</td>
+      <td><select onchange="setRedutor('${tab}',${ri},this.value)" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11.5px">
+        <option value="" ${!r.redutor?'selected':''}>—</option>
+        <option value="25" ${r.redutor==='25'?'selected':''}>25%</option>
+        <option value="50" ${r.redutor==='50'?'selected':''}>50%</option>
+      </select></td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="6" class="empty"><div class="ei">📉</div>Nenhum cliente encontrado</td></tr>';
+}
+
+async function setRedutor(tab,ri,val){
+  const r=D.pagamentos[tab]?.[ri];
+  if(!r) return;
+  r.redutor=val||'';
+  save();
+  for(let pi=0;pi<2;pi++){
+    const origemId='pag_'+PGR_EMPRESA+'_'+r.id+'_'+pi;
+    if(val && r.consultor && r.p?.[pi]?.s==='PAGO') await pgrCheckComissaoAuto(r,pi,'PAGO');
+    else if(!val) await pgrRemoveComissao(origemId);
+  }
+  renderRedutorTab();
+  toast(val?`Redutor definido: ${val}%`:'Redutor removido');
+}
+
 // ──────────────────────────────────────────
 // PERSISTENCE
 // ──────────────────────────────────────────
@@ -1310,6 +1383,7 @@ const titles={
   dashboard:'◆ Dashboard Executivo',
   financeiro:'💰 Financeiro',
   pagamentos:'💳 Controle de Pagamentos',
+  redutor:'📉 Redutor de Comissão',
   cancelados:'🚫 Clientes Cancelados',
   vendas:'📈 Vendas Mensais',
   vendedores:'🏆 Ranking de Vendedores',
@@ -1472,6 +1546,7 @@ function rPage(p){
   if(p==='dashboard')rDash();
   else if(p==='financeiro'){renderFinTabs();}
   else if(p==='pagamentos'){renderPagTabs();renderPag();}
+  else if(p==='redutor')renderRedutorTab();
   else if(p==='cancelados')rCanc();
   else if(p==='vendas')rVendas();
   else if(p==='vendedores')rVend();
