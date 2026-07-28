@@ -911,8 +911,15 @@ tfoot td{
       </div>
       <div class="fld"><label>Data da Venda</label><input id="pag-data" placeholder="DD/MM/AAAA"></div>
       <div class="fld sp2"><label>Cliente</label><input id="pag-cli"></div>
-      <div class="fld"><label>Consultor</label><input id="pag-consultor" placeholder="Nome do consultor"></div>
+      <div class="fld"><label>Consultor</label><input id="pag-consultor" list="lista-vendedores" placeholder="Nome do consultor"></div>
       <div class="fld"><label>Valor Carta (R$)</label><input id="pag-val" type="number"></div>
+      <div class="fld"><label>Redutor</label>
+        <select id="pag-redutor">
+          <option value="">—</option>
+          <option value="25">25% (comissão integral)</option>
+          <option value="50">50% (comissão pela metade)</option>
+        </select>
+      </div>
       <div class="fld"><label>Data 1ª Parcela</label><input id="pag-p1" placeholder="DD/MM/AAAA" oninput="calcProxVenc()"></div>
       <div class="fld"><label>Status 1ª</label>
         <select id="pag-s1">
@@ -945,8 +952,15 @@ tfoot td{
       </div>
       <div class="fld"><label>Data da Venda</label><input id="edit-data" placeholder="DD/MM/AAAA"></div>
       <div class="fld sp2"><label>Cliente</label><input id="edit-cli"></div>
-      <div class="fld"><label>Consultor</label><input id="edit-consultor" placeholder="Nome do consultor"></div>
+      <div class="fld"><label>Consultor</label><input id="edit-consultor" list="lista-vendedores" placeholder="Nome do consultor"></div>
       <div class="fld"><label>Valor Carta (R$)</label><input id="edit-val" type="number"></div>
+      <div class="fld"><label>Redutor</label>
+        <select id="edit-redutor">
+          <option value="">—</option>
+          <option value="25">25% (comissão integral)</option>
+          <option value="50">50% (comissão pela metade)</option>
+        </select>
+      </div>
     </div>
     <div style="margin-top:16px">
       <div style="font-size:9.5px;font-weight:700;color:var(--gold-dim);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px">📅 Parcelas</div>
@@ -958,6 +972,8 @@ tfoot td{
     </div>
   </div>
 </div>
+
+<datalist id="lista-vendedores"></datalist>
 
 <!-- Nova Aba de Vencimento -->
 <div class="overlay" id="modal-newtab">
@@ -1172,6 +1188,79 @@ function pgrPushCloud(){
       console.warn('[Portal GR] Falha ao salvar na nuvem (dados continuam salvos localmente):',e.message);
     }
   },800);
+}
+
+// ══════════════════════════════════════════
+// COMISSÃO AUTOMÁTICA (conecta com o app Comissões — mesmo Supabase)
+// Regra: cota com Redutor definido (25% ou 50%) e Consultor preenchido gera
+// comissão de 0,35% sozinha quando a 1ª e a 2ª parcela do cliente forem
+// marcadas PAGO. Redutor 25% = comissão integral (0,35% sobre o valor cheio).
+// Redutor 50% = comissão pela metade (0,35% sobre a metade do valor — na
+// prática, guardamos o valor cheio em "credit" e usamos perc=0,175 pra dar
+// o mesmo resultado, mantendo o valor real do contrato no registro).
+// Se a parcela for desmarcada de PAGO depois, remove a comissão lançada.
+// ══════════════════════════════════════════
+function pgrMesAtual(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+
+async function pgrCheckComissaoAuto(row,pi,status){
+  if(!row.redutor||!row.consultor) return; // sem redutor ou sem vendedor — não gera nada sozinho
+  const origemId='pag_'+PGR_EMPRESA+'_'+row.id+'_'+pi;
+  if(status==='PAGO'){
+    const perc=row.redutor==='50'?0.175:0.35;
+    const credit=+row.valor||0;
+    const commission=+(credit*perc/100).toFixed(2);
+    await pgrUpsertComissao({
+      id:origemId,consultant:row.consultor,month:pgrMesAtual(),client:row.cliente||'',
+      credit,parc:(pi+1)+'/2',perc:String(perc),commission,
+      _auto:true,_empresa:PGR_EMPRESA
+    });
+    toast('Comissão automática lançada: '+row.consultor+' — R$ '+commission.toFixed(2).replace('.',','));
+  } else {
+    await pgrRemoveComissao(origemId);
+  }
+}
+async function pgrUpsertComissao(rec){
+  try{
+    const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados').eq('chave','default').maybeSingle();
+    if(error) throw error;
+    const dados=data?.dados&&Object.keys(data.dados).length?data.dados:{records:[],vendors:[]};
+    dados.records=dados.records||[];
+    dados.vendors=dados.vendors||[];
+    const idx=dados.records.findIndex(r=>r.id===rec.id);
+    if(idx>-1) dados.records[idx]=rec; else dados.records.push(rec);
+    if(!dados.vendors.includes(rec.consultant)) dados.vendors.push(rec.consultant);
+    const{error:upErr}=await pgrSb.from('portal_comissoes_estado').update({
+      dados,updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null
+    }).eq('chave','default');
+    if(upErr) throw upErr;
+  }catch(e){
+    console.warn('[Portal GR] Falha ao lançar comissão automática:',e.message);
+    toast('Falha ao lançar comissão automática — lance manualmente em Comissões','err');
+  }
+}
+async function pgrRemoveComissao(id){
+  try{
+    const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados').eq('chave','default').maybeSingle();
+    if(error) throw error;
+    const dados=data?.dados&&Object.keys(data.dados).length?data.dados:{records:[],vendors:[]};
+    dados.records=(dados.records||[]).filter(r=>r.id!==id);
+    const{error:upErr}=await pgrSb.from('portal_comissoes_estado').update({
+      dados,updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null
+    }).eq('chave','default');
+    if(upErr) throw upErr;
+  }catch(e){
+    console.warn('[Portal GR] Falha ao remover comissão automática:',e.message);
+  }
+}
+// Preenche a lista de sugestões do campo Consultor com quem já apareceu em
+// vendedores/consultores desta base — não trava em nomes fixos.
+function pgrAtualizarListaVendedores(){
+  const dl=document.getElementById('lista-vendedores');
+  if(!dl) return;
+  const nomes=new Set();
+  (D.vendedores||[]).forEach(v=>{ if(v.nome) nomes.add(v.nome); });
+  Object.values(D.pagamentos||{}).forEach(arr=>(arr||[]).forEach(r=>{ if(r.consultor) nomes.add(r.consultor); }));
+  dl.innerHTML=[...nomes].sort().map(n=>`<option value="${n}">`).join('');
 }
 
 // ──────────────────────────────────────────
@@ -1955,7 +2044,7 @@ function renderPag(){
       <td style="font-size:11px;white-space:nowrap;color:var(--muted)">${r.data||'—'}</td>
       <td><strong style="color:var(--text)">${r.cliente||'—'}</strong></td>
       <td style="font-size:11px;color:var(--muted)">${r.consultor||'—'}</td>
-      <td style="white-space:nowrap;color:var(--gold)">${r.valor?brlk(+r.valor):'—'}</td>
+      <td style="white-space:nowrap;color:var(--gold)">${r.valor?brlk(+r.valor):'—'}${r.redutor?` <span style="font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:1px 4px;vertical-align:middle" title="${r.redutor==='25'?'Comissão integral':'Comissão pela metade'}">-${r.redutor}%</span>`:''}</td>
       ${parcs.join('')}${pad}
       <td style="white-space:nowrap">
         <button class="fin-del" style="color:var(--gold-dim);font-size:12px" title="Editar" onclick="openEditPag('${tab}',${realIdx})">✏️</button>
@@ -1966,10 +2055,12 @@ function renderPag(){
 }
 
 function updParcSt(tab,ri,pi,val,sel){
-  D.pagamentos[tab][ri].p[pi].s=val;
+  const r=D.pagamentos[tab][ri];
+  r.p[pi].s=val;
   if(sel){
     sel.style.color=val==='PAGO'?'var(--green)':val==='ABERTO'?'var(--yellow)':'var(--red)';
   }
+  if(pi<2) pgrCheckComissaoAuto(r,pi,val);
   // Auto-transfer: if ANY parcela is CANCELADO, move client to cancelados
   if(val==='CANCELADO'){
     autoTransferCancelado(tab,ri);
@@ -2424,6 +2515,7 @@ function savePag(){
     cliente:document.getElementById('pag-cli').value.trim().toUpperCase(),
     consultor:document.getElementById('pag-consultor').value.trim().toUpperCase(),
     valor:parseFloat(document.getElementById('pag-val').value)||0,
+    redutor:document.getElementById('pag-redutor').value||'',
     p:parcelas
   };
   if(!e.cliente)return;
@@ -2439,7 +2531,11 @@ function savePag(){
   document.getElementById('pag-consultor').value='';
   document.getElementById('pag-data').value='';
   document.getElementById('pag-val').value='';
+  document.getElementById('pag-redutor').value='';
   renderPag();save();
+  // Parcelas já vêm com status (pode nascer PAGO se a 1ª venda já entrou paga) — dispara
+  // a checagem de comissão automática pras parcelas 1/2 que já nasceram PAGO.
+  (e.p||[]).forEach((p,pi)=>{ if(pi<2&&p.s==='PAGO') pgrCheckComissaoAuto(e,pi,'PAGO'); });
   toast('Cliente adicionado com 6 vencimentos calculados!');
 }
 
@@ -2452,6 +2548,7 @@ function openEditPag(tab,idx){
   document.getElementById('edit-cli').value=r.cliente||'';
   document.getElementById('edit-consultor').value=r.consultor||'';
   document.getElementById('edit-val').value=r.valor||'';
+  document.getElementById('edit-redutor').value=r.redutor||'';
   // render parcelas editor
   const pg=document.getElementById('edit-parcelas');
   pg.innerHTML=(r.p||[]).map((p,pi)=>`
@@ -2482,12 +2579,18 @@ function saveEditPag(){
   r.cliente=document.getElementById('edit-cli').value.trim().toUpperCase();
   r.consultor=document.getElementById('edit-consultor').value.trim().toUpperCase();
   r.valor=parseFloat(document.getElementById('edit-val').value)||0;
-  // update parcelas
+  r.redutor=document.getElementById('edit-redutor').value||'';
+  // update parcelas — guarda o status ANTES de sobrescrever, pra saber se a 1ª/2ª
+  // parcela mudou de/para PAGO e disparar (ou desfazer) a comissão automática.
+  const statusAntes=(r.p||[]).map(p=>p.s);
   (r.p||[]).forEach((_,pi)=>{
     const dEl=document.getElementById('ep-d-'+pi);
     const sEl=document.getElementById('ep-s-'+pi);
     if(dEl)r.p[pi].d=dEl.value;
     if(sEl)r.p[pi].s=sEl.value;
+  });
+  (r.p||[]).forEach((p,pi)=>{
+    if(pi<2&&p.s!==statusAntes[pi]) pgrCheckComissaoAuto(r,pi,p.s);
   });
   // handle tab change
   if(newTab!==tab){
@@ -2608,6 +2711,7 @@ const now=new Date();
 document.getElementById('top-date').textContent=now.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
 updateCancNavCount();
 rDash();
+pgrAtualizarListaVendedores();
 } // fim pgrInitApp
 pgrCheckAuth();
 
