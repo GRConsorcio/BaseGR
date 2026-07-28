@@ -763,7 +763,7 @@ tfoot td{
         <input class="inp" id="redutor-srch" placeholder="Buscar cliente ou consultor..." style="max-width:280px;margin:0" oninput="renderRedutorTab()">
       </div>
       <div style="padding:10px 18px;font-size:11px;color:var(--muted2);line-height:1.6;border-bottom:1px solid var(--border-gold)">
-        25% = comissão integral (0,35% sobre o valor cheio). 50% = comissão pela metade (0,175%). Se a 1ª ou 2ª parcela já estiver PAGO, a comissão automática é lançada (ou atualizada/removida) assim que o redutor for definido aqui.
+        25% = comissão integral (0,35% sobre o valor cheio). 50% = comissão pela metade (0,35% sobre metade do valor). Se a 1ª ou 2ª parcela já estiver PAGO, a comissão automática é lançada (ou atualizada/removida) assim que o redutor for definido aqui.
       </div>
       <div class="panel-body-np">
         <div class="t-wrap">
@@ -1217,9 +1217,9 @@ function pgrPushCloud(){
 // Regra: cota com Redutor definido (25% ou 50%) e Consultor preenchido gera
 // comissão de 0,35% sozinha quando a 1ª e a 2ª parcela do cliente forem
 // marcadas PAGO. Redutor 25% = comissão integral (0,35% sobre o valor cheio).
-// Redutor 50% = comissão pela metade (0,35% sobre a metade do valor — na
-// prática, guardamos o valor cheio em "credit" e usamos perc=0,175 pra dar
-// o mesmo resultado, mantendo o valor real do contrato no registro).
+// Redutor 50% = comissão pela metade (0,35% sobre a metade do valor — o
+// registro guarda a METADE do valor em "credit" e sempre 0,35% de perc, pra
+// não confundir com um percentual estranho tipo 0,175%).
 // Se a parcela for desmarcada de PAGO depois, remove a comissão lançada.
 // ══════════════════════════════════════════
 // Mês de referência da comissão é sempre o mês SEGUINTE ao atual (ex: venda/
@@ -1230,8 +1230,9 @@ async function pgrCheckComissaoAuto(row,pi,status){
   if(!row.redutor||!row.consultor) return; // sem redutor ou sem vendedor — não gera nada sozinho
   const origemId='pag_'+PGR_EMPRESA+'_'+row.id+'_'+pi;
   if(status==='PAGO'){
-    const perc=row.redutor==='50'?0.175:0.35;
-    const credit=+row.valor||0;
+    const valorCheio=+row.valor||0;
+    const credit=row.redutor==='50'?+(valorCheio/2).toFixed(2):valorCheio;
+    const perc=0.35;
     const commission=+(credit*perc/100).toFixed(2);
     await pgrUpsertComissao({
       id:origemId,consultant:row.consultor,month:pgrMesAtual(),client:row.cliente||'',
