@@ -1222,7 +1222,9 @@ function pgrPushCloud(){
 // o mesmo resultado, mantendo o valor real do contrato no registro).
 // Se a parcela for desmarcada de PAGO depois, remove a comissão lançada.
 // ══════════════════════════════════════════
-function pgrMesAtual(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+// Mês de referência da comissão é sempre o mês SEGUINTE ao atual (ex: venda/
+// pagamento em julho -> comissão referencia agosto).
+function pgrMesAtual(){ const d=new Date(); d.setMonth(d.getMonth()+1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 
 async function pgrCheckComissaoAuto(row,pi,status){
   if(!row.redutor||!row.consultor) return; // sem redutor ou sem vendedor — não gera nada sozinho

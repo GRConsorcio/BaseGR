@@ -70,6 +70,17 @@
   .btn-home { background: transparent; border: 1px dashed rgba(201,168,76,0.4); color: var(--gold-dark); }
   .btn-home:hover { border-color: var(--gold); color: var(--gold); }
 
+  /* RECOLHER MENU */
+  .app.sb-collapsed { grid-template-columns: 56px 1fr; }
+  .app.sb-collapsed .sidebar-title,
+  .app.sb-collapsed #folderList,
+  .app.sb-collapsed .sidebar-actions .btn-sidebar { display: none; }
+  .sidebar-toggle { width: 100%; padding: 10px 0; margin-top: 8px; border-top: 1px solid rgba(201,168,76,0.25); background: transparent; border-left: none; border-right: none; border-bottom: none; color: var(--gold-dark); font-family: 'Lato', sans-serif; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.14s; }
+  .sidebar-toggle:hover { color: var(--gold-light); background: rgba(201,168,76,0.1); }
+  .sidebar-toggle .tgl-arrow { font-size: 14px; transition: transform 0.26s; }
+  .app.sb-collapsed .sidebar-toggle .tgl-arrow { transform: rotate(180deg); }
+  .app.sb-collapsed .sidebar-toggle .tgl-label { display: none; }
+
   .main { background: var(--off); overflow-y: auto; }
   .view { display: none; }
   .view.active { display: block; }
@@ -305,6 +316,10 @@
       <button class="btn-sidebar btn-new-vendor" onclick="openModal()">＋ Adicionar Vendedor</button>
       <button class="btn-sidebar btn-home" onclick="showHome()">⟵ Visão Geral</button>
     </div>
+    <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">
+      <span class="tgl-arrow">‹</span>
+      <span class="tgl-label">Recolher</span>
+    </button>
   </div>
 
   <div class="main">
@@ -724,6 +739,9 @@
     document.querySelectorAll('.folder').forEach(f=>f.classList.remove('active'));
     renderHome();
   }
+  function toggleSidebar(){
+    document.querySelector('.app').classList.toggle('sb-collapsed');
+  }
   function openFolder(consultant) {
     activeConsultant=consultant; activeMonthFilter='';
     document.getElementById('homeView').classList.remove('active');
@@ -865,9 +883,15 @@
     records=records.filter(r=>r.id!=id);save();renderFolder();
   }
 
+  // Mês de referência da comissão é sempre o mês SEGUINTE ao atual (ex: venda/
+  // pagamento em julho -> comissão referencia agosto).
+  function pgrMesReferencia(){
+    const d=new Date(); d.setMonth(d.getMonth()+1);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  }
   // INIT — só roda depois de autenticar (ver pgrCheckAuth/pgrOnAuthed acima)
   async function pgrInitApp(){
-    document.getElementById('fMonth').value=new Date().toISOString().slice(0,7);
+    document.getElementById('fMonth').value=pgrMesReferencia();
     pgrLoadLocal();
     await pgrPullCloud();
     renderSidebar(); renderHome();
