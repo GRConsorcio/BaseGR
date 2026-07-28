@@ -1533,12 +1533,30 @@ function toggleSidebar(){
   const sb=document.querySelector('.sidebar');
   sb.classList.toggle('collapsed');
 }
+// Lembra a última aba visitada (por navegador) pra não voltar sempre pro
+// Dashboard quando o usuário sai pra outra aba/arquivo (Comissões, GR) e
+// volta — sobrevive a reload/fechar e reabrir a aba.
+function pgrLastPageKey(){ return 'pgr_'+PGR_EMPRESA+'_last_page'; }
+function pgrSaveLastPage(page){
+  if(!page) return;
+  try{ localStorage.setItem(pgrLastPageKey(),page); }catch(e){}
+}
+function pgrRestoreLastPage(){
+  try{
+    const saved=localStorage.getItem(pgrLastPageKey());
+    if(!saved||!document.getElementById('page-'+saved)) return false;
+    const navEl=document.querySelector(`.nav-item[onclick*="nav('${saved}'"]`);
+    nav(saved,navEl||null);
+    return true;
+  }catch(e){ return false; }
+}
 function nav(page,el){
   curPage=page;
+  pgrSaveLastPage(page);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('page-'+page).classList.add('on');
-  el.classList.add('on');
+  if(el) el.classList.add('on');
   document.getElementById('top-title').textContent=titles[page]||'';
   rPage(page);
 }
@@ -2787,6 +2805,7 @@ document.getElementById('top-date').textContent=now.toLocaleDateString('pt-BR',{
 updateCancNavCount();
 rDash();
 pgrAtualizarListaVendedores();
+pgrRestoreLastPage();
 } // fim pgrInitApp
 pgrCheckAuth();
 
