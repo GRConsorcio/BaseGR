@@ -123,6 +123,17 @@ body{
 .sidebar.collapsed .sidebar-toggle .tgl-arrow{transform:rotate(180deg)}
 .sidebar.collapsed .sidebar-toggle .tgl-label{display:none}
 
+/* Toggle compacto no topo, ao lado do logo — sempre visível, não depende de
+   rolar a lista de menus até o fim pra achar o botão de recolher. */
+.sidebar-toggle-top{
+  margin-left:auto;flex-shrink:0;width:26px;height:26px;border-radius:7px;
+  border:1px solid var(--border-gold);background:transparent;color:var(--gold-dim);
+  cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;
+  transition:all .15s;padding:0;
+}
+.sidebar-toggle-top:hover{color:var(--gold2);background:var(--gold-glow)}
+.sidebar.collapsed .sidebar-toggle-top{display:none}
+
 /* ── LOGO (expanded) ── */
 .logo-wrap{
   padding:22px 20px 18px;
@@ -566,6 +577,7 @@ tfoot td{
       <div class="logo-name">GR Consórcio</div>
       <div class="logo-sub">Dashboard Executivo</div>
     </div>
+    <button class="sidebar-toggle-top" onclick="toggleSidebar()" title="Recolher menu">‹</button>
   </div>
   <div class="nav-body">
     <div class="nav-sect">Principal</div>
