@@ -123,16 +123,21 @@ body{
 .sidebar.collapsed .sidebar-toggle .tgl-arrow{transform:rotate(180deg)}
 .sidebar.collapsed .sidebar-toggle .tgl-label{display:none}
 
-/* Toggle compacto no topo, ao lado do logo — sempre visível, não depende de
-   rolar a lista de menus até o fim pra achar o botão de recolher. */
-.sidebar-toggle-top{
-  margin-left:auto;flex-shrink:0;width:26px;height:26px;border-radius:7px;
-  border:1px solid var(--border-gold);background:transparent;color:var(--gold-dim);
-  cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;
-  transition:all .15s;padding:0;
+/* Alça fixa na borda direita da sidebar, sempre no meio vertical da tela —
+   não depende de rolar a lista de menus nem do tamanho do conteúdo. Um só
+   botão, sempre no mesmo lugar, recolhe e volta a expandir. */
+.sidebar-edge-toggle{
+  position:fixed;top:50%;left:230px;transform:translate(-50%,-50%);
+  width:26px;height:26px;border-radius:50%;
+  background:var(--surface2);border:1px solid var(--border-gold);
+  color:var(--gold-dim);display:flex;align-items:center;justify-content:center;
+  cursor:pointer;z-index:250;font-size:13px;padding:0;
+  transition:left .26s cubic-bezier(.4,0,.2,1),color .15s,background .15s;
 }
-.sidebar-toggle-top:hover{color:var(--gold2);background:var(--gold-glow)}
-.sidebar.collapsed .sidebar-toggle-top{display:none}
+.sidebar-edge-toggle:hover{color:var(--gold2);background:var(--gold-glow)}
+.sidebar-edge-toggle .tgl-arrow{transition:transform .26s}
+.sidebar.collapsed .sidebar-edge-toggle{left:62px}
+.sidebar.collapsed .sidebar-edge-toggle .tgl-arrow{transform:rotate(180deg)}
 
 /* ── LOGO (expanded) ── */
 .logo-wrap{
@@ -577,19 +582,19 @@ tfoot td{
       <div class="logo-name">GRO</div>
       <div class="logo-sub">Dashboard Executivo</div>
     </div>
-    <button class="sidebar-toggle-top" onclick="toggleSidebar()" title="Recolher menu">‹</button>
   </div>
+  <button class="sidebar-edge-toggle" onclick="toggleSidebar()" title="Recolher/expandir menu"><span class="tgl-arrow">‹</span></button>
   <div class="nav-body">
     <div class="nav-sect">Principal</div>
-    <div class="nav-item on" onclick="nav('dashboard',this)" title="Dashboard"><span class="nav-icon">◆</span><span class="nav-label">Dashboard</span></div>
-    <div class="nav-item" onclick="nav('financeiro',this)" title="Financeiro"><span class="nav-icon">💰</span><span class="nav-label">Financeiro</span></div>
+    <div class="nav-item on" onclick="nav('dashboard',this)" title="Dashboard"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".9"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".9"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".9"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".9"/></svg></span><span class="nav-label">Dashboard</span></div>
+    <div class="nav-item" onclick="nav('financeiro',this)" title="Financeiro"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="4" rx="6" ry="2.2" stroke="currentColor" stroke-width="1.3"/><path d="M2 4v4c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2V4" stroke="currentColor" stroke-width="1.3"/><path d="M2 8v4c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2V8" stroke="currentColor" stroke-width="1.3"/></svg></span><span class="nav-label">Financeiro</span></div>
     <div class="nav-sect">Clientes</div>
-    <div class="nav-item" onclick="nav('pagamentos',this)" title="Pagamentos" id="nav-pagamentos"><span class="nav-icon">💳</span><span class="nav-label">Pagamentos</span></div>
-    <div class="nav-item" onclick="nav('redutor',this)" title="Redutor"><span class="nav-icon">📉</span><span class="nav-label">Redutor</span></div>
-    <div class="nav-item" onclick="nav('cancelados',this)" id="nav-cancelados" title="Cancelados"><span class="nav-icon">🚫</span><span class="nav-label">Cancelados <span id="canc-nav-count" style="opacity:.6;font-size:10px"></span></span></div>
+    <div class="nav-item" onclick="nav('pagamentos',this)" title="Pagamentos" id="nav-pagamentos"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 6.3h13" stroke="currentColor" stroke-width="1.3"/><rect x="3.3" y="9" width="3.4" height="1.4" rx=".5" fill="currentColor"/></svg></span><span class="nav-label">Pagamentos</span></div>
+    <div class="nav-item" onclick="nav('redutor',this)" title="Redutor"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4l4.5 4.5L9 6l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 11H14v-3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="nav-label">Redutor</span></div>
+    <div class="nav-item" onclick="nav('cancelados',this)" id="nav-cancelados" title="Cancelados"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M4 4l8 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span class="nav-label">Cancelados <span id="canc-nav-count" style="opacity:.6;font-size:10px"></span></span></div>
     <div class="nav-sect">Vendas</div>
-    <div class="nav-item" onclick="nav('vendas',this)" title="Vendas Mensais"><span class="nav-icon">📈</span><span class="nav-label">Vendas Mensais</span></div>
-    <div class="nav-item" onclick="nav('vendedores',this)" title="Ranking"><span class="nav-icon">🏆</span><span class="nav-label">Ranking</span></div>
+    <div class="nav-item" onclick="nav('vendas',this)" title="Vendas Mensais"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 12l4.5-4.5L9 10l5-5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 5H14v3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="nav-label">Vendas Mensais</span></div>
+    <div class="nav-item" onclick="nav('vendedores',this)" title="Ranking"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.3l-3.8 2 .7-4.3-3.1-3 4.3-.6L8 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></span><span class="nav-label">Ranking</span></div>
   </div>
   <div class="sidebar-foot">
     <div class="pulse"></div>
@@ -1395,13 +1400,13 @@ function stOpts(cur){
 // NAVIGATION
 // ──────────────────────────────────────────
 const titles={
-  dashboard:'◆ Dashboard Executivo',
-  financeiro:'💰 Financeiro',
-  pagamentos:'💳 Controle de Pagamentos',
-  redutor:'📉 Redutor de Comissão',
-  cancelados:'🚫 Clientes Cancelados',
-  vendas:'📈 Vendas Mensais',
-  vendedores:'🏆 Ranking de Vendedores',
+  dashboard:'Dashboard Executivo',
+  financeiro:'Financeiro',
+  pagamentos:'Controle de Pagamentos',
+  redutor:'Redutor de Comissão',
+  cancelados:'Clientes Cancelados',
+  vendas:'Vendas Mensais',
+  vendedores:'Ranking de Vendedores',
 };
 
 /* ═══════ CALENDAR PICKER ═══════ */

@@ -75,11 +75,20 @@
   .app.sb-collapsed .sidebar-title,
   .app.sb-collapsed #folderList,
   .app.sb-collapsed .sidebar-actions .btn-sidebar { display: none; }
-  .sidebar-toggle { width: 100%; padding: 10px 0; margin-top: 8px; border-top: 1px solid rgba(201,168,76,0.25); background: transparent; border-left: none; border-right: none; border-bottom: none; color: var(--gold-dark); font-family: 'Lato', sans-serif; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.14s; }
-  .sidebar-toggle:hover { color: var(--gold-light); background: rgba(201,168,76,0.1); }
-  .sidebar-toggle .tgl-arrow { font-size: 14px; transition: transform 0.26s; }
-  .app.sb-collapsed .sidebar-toggle .tgl-arrow { transform: rotate(180deg); }
-  .app.sb-collapsed .sidebar-toggle .tgl-label { display: none; }
+  /* Alça fixa na borda direita da sidebar, sempre no meio vertical da tela —
+     não depende de rolar a lista de consultores nem do tamanho do conteúdo. */
+  .sidebar-edge-toggle{
+    position:fixed;top:50%;left:300px;transform:translate(-50%,-50%);
+    width:26px;height:26px;border-radius:50%;
+    background:#231A07;border:1px solid rgba(201,168,76,0.35);
+    color:var(--gold-dark);display:flex;align-items:center;justify-content:center;
+    cursor:pointer;z-index:250;font-size:13px;padding:0;
+    transition:left .26s cubic-bezier(.4,0,.2,1),color .15s,background .15s;
+  }
+  .sidebar-edge-toggle:hover{color:var(--gold-light);background:rgba(201,168,76,0.15)}
+  .sidebar-edge-toggle .tgl-arrow{transition:transform .26s}
+  .app.sb-collapsed .sidebar-edge-toggle{left:56px}
+  .app.sb-collapsed .sidebar-edge-toggle .tgl-arrow{transform:rotate(180deg)}
 
   .main { background: var(--off); overflow-y: auto; }
   .view { display: none; }
@@ -310,17 +319,14 @@
 <div class="app">
   <!-- SIDEBAR -->
   <div class="sidebar">
-    <div class="sidebar-title">📂 Consultores</div>
+    <div class="sidebar-title" style="display:flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M1.5 4.5a1 1 0 0 1 1-1h3.4l1.2 1.6h6.4a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1V4.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg> Consultores</div>
     <div id="folderList"></div>
     <div class="sidebar-actions">
       <button class="btn-sidebar btn-new-vendor" onclick="openModal()">＋ Adicionar Vendedor</button>
       <button class="btn-sidebar btn-home" onclick="showHome()">⟵ Visão Geral</button>
     </div>
-    <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">
-      <span class="tgl-arrow">‹</span>
-      <span class="tgl-label">Recolher</span>
-    </button>
   </div>
+  <button class="sidebar-edge-toggle" onclick="toggleSidebar()" title="Recolher/expandir menu"><span class="tgl-arrow">‹</span></button>
 
   <div class="main">
     <!-- HOME -->
