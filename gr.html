@@ -952,6 +952,7 @@ tfoot td{
       <div class="fld sp2"><label>Cliente</label><input id="pag-cli"></div>
       <div class="fld"><label>Consultor</label><input id="pag-consultor" list="lista-vendedores" placeholder="Nome do consultor"></div>
       <div class="fld"><label>Valor Carta (R$)</label><input id="pag-val" type="number"></div>
+      <div class="fld"><label>Nº Contrato</label><input id="pag-contrato" placeholder="Ex: 12345"></div>
       <div class="fld"><label>Redutor</label>
         <select id="pag-redutor">
           <option value="">—</option>
@@ -993,6 +994,7 @@ tfoot td{
       <div class="fld sp2"><label>Cliente</label><input id="edit-cli"></div>
       <div class="fld"><label>Consultor</label><input id="edit-consultor" list="lista-vendedores" placeholder="Nome do consultor"></div>
       <div class="fld"><label>Valor Carta (R$)</label><input id="edit-val" type="number"></div>
+      <div class="fld"><label>Nº Contrato</label><input id="edit-contrato" placeholder="Ex: 12345"></div>
       <div class="fld"><label>Redutor</label>
         <select id="edit-redutor">
           <option value="">—</option>
@@ -2056,7 +2058,7 @@ function renderPag(){
 
   // Filtra clientes
   const filtered=rows.filter(r=>{
-    if(q&&!r.cliente?.toLowerCase().includes(q)&&!(r.consultor||'').toLowerCase().includes(q))return false;
+    if(q&&!r.cliente?.toLowerCase().includes(q)&&!(r.consultor||'').toLowerCase().includes(q)&&!(r.contrato||'').toLowerCase().includes(q))return false;
 
     // ── Date filters on r.data (DD/MM/AAAA format)
     const rDate=parseDateBR(r.data);
@@ -2155,7 +2157,7 @@ function renderPag(){
     const pad='<td>—</td>'.repeat(Math.max(0,6-(r.p||[]).length));
     return`<tr>
       <td style="font-size:11px;white-space:nowrap;color:var(--muted)">${r.data||'—'}</td>
-      <td><strong style="color:var(--text)">${r.cliente||'—'}</strong></td>
+      <td><strong style="color:var(--text)">${r.cliente||'—'}</strong>${r.contrato?`<div style="font-size:9.5px;color:var(--muted2)">Contrato: ${r.contrato}</div>`:''}</td>
       <td style="font-size:11px;color:var(--muted)">${r.consultor||'—'}</td>
       <td style="white-space:nowrap;color:var(--gold)">${r.valor?brlk(+r.valor):'—'}${r.redutor?` <span style="font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:1px 4px;vertical-align:middle" title="${r.redutor==='25'?'Comissão integral':'Comissão pela metade'}">-${r.redutor}%</span>`:''}</td>
       ${parcs.join('')}${pad}
@@ -2628,6 +2630,7 @@ function savePag(){
     cliente:document.getElementById('pag-cli').value.trim().toUpperCase(),
     consultor:document.getElementById('pag-consultor').value.trim().toUpperCase(),
     valor:parseFloat(document.getElementById('pag-val').value)||0,
+    contrato:document.getElementById('pag-contrato').value.trim(),
     redutor:document.getElementById('pag-redutor').value||'',
     p:parcelas
   };
@@ -2644,6 +2647,7 @@ function savePag(){
   document.getElementById('pag-consultor').value='';
   document.getElementById('pag-data').value='';
   document.getElementById('pag-val').value='';
+  document.getElementById('pag-contrato').value='';
   document.getElementById('pag-redutor').value='';
   renderPag();save();
   // Parcelas já vêm com status (pode nascer PAGO se a 1ª venda já entrou paga) — dispara
@@ -2661,6 +2665,7 @@ function openEditPag(tab,idx){
   document.getElementById('edit-cli').value=r.cliente||'';
   document.getElementById('edit-consultor').value=r.consultor||'';
   document.getElementById('edit-val').value=r.valor||'';
+  document.getElementById('edit-contrato').value=r.contrato||'';
   document.getElementById('edit-redutor').value=r.redutor||'';
   // render parcelas editor
   const pg=document.getElementById('edit-parcelas');
@@ -2692,6 +2697,7 @@ function saveEditPag(){
   r.cliente=document.getElementById('edit-cli').value.trim().toUpperCase();
   r.consultor=document.getElementById('edit-consultor').value.trim().toUpperCase();
   r.valor=parseFloat(document.getElementById('edit-val').value)||0;
+  r.contrato=document.getElementById('edit-contrato').value.trim();
   r.redutor=document.getElementById('edit-redutor').value||'';
   // update parcelas — guarda o status ANTES de sobrescrever, pra saber se a 1ª/2ª
   // parcela mudou de/para PAGO e disparar (ou desfazer) a comissão automática.
@@ -2937,6 +2943,57 @@ function bkExportHistJSON(idx) {
   bkDownloadJSON(hist[idx].data, 'backup_hist_v' + (idx + 1));
 }
 
+// ══════════════════════════════════════════
+// ZERAR BASE — apaga clientes/financeiro/cancelados/vendas desta base.
+// Exige digitar "ZERAR" + a senha do login atual (reautentica de verdade
+// contra o Supabase, não é só um campo decorativo). Mantém a estrutura de
+// abas configurada (pag_tabs/fin_tabs), só esvazia os dados. Tira um backup
+// automático no Histórico ANTES de apagar — é a forma de desfazer.
+// ══════════════════════════════════════════
+function openZerarBase(){
+  const totalClientes=Object.values(D.pagamentos||{}).reduce((s,arr)=>s+(arr?.length||0),0);
+  const totalCancelados=(D.cancelados||[]).length;
+  const totalFin=(D.financeiro||[]).length;
+  document.getElementById('zerar-resumo').textContent=
+    `${totalClientes} cliente(s) em Pagamentos, ${totalCancelados} em Cancelados e ${totalFin} lançamento(s) financeiro(s)`;
+  document.getElementById('zerar-confirm-txt').value='';
+  document.getElementById('zerar-confirm-pass').value='';
+  document.getElementById('zerar-err').textContent='';
+  openModal('modal-zerar-base');
+}
+async function confirmarZerarBase(){
+  const txt=(document.getElementById('zerar-confirm-txt').value||'').trim().toUpperCase();
+  const pass=document.getElementById('zerar-confirm-pass').value||'';
+  const errEl=document.getElementById('zerar-err');
+  const btn=document.getElementById('zerar-confirm-btn');
+  errEl.textContent='';
+  if(txt!=='ZERAR'){ errEl.textContent='Digite ZERAR (maiúsculo) pra confirmar.'; return; }
+  if(!pass){ errEl.textContent='Informe sua senha.'; return; }
+
+  btn.disabled=true; btn.textContent='Verificando...';
+  const{error:authErr}=await pgrSb.auth.signInWithPassword({email:pgrCurUser.email,password:pass});
+  btn.disabled=false; btn.textContent='Zerar Tudo';
+  if(authErr){ errEl.textContent='Senha incorreta.'; return; }
+
+  // Backup automático ANTES de apagar — só depois disso mexe no D de verdade.
+  try{ bkPushHist(); }catch(e){ console.warn('bkPushHist antes de zerar falhou:',e); }
+
+  D.financeiro=[];
+  D.fin_det={};
+  const pagVazio={};
+  (D.pag_tabs||['d10','d16','d20','d25']).forEach(t=>{ pagVazio[t]=[]; });
+  D.pagamentos=pagVazio;
+  D.cancelados=[];
+  D.vendas_mes=[];
+  D.vendedores=[];
+
+  closeModal('modal-zerar-base');
+  save();
+  if(typeof rPage==='function') rPage(curPage);
+  if(typeof updateCancNavCount==='function') updateCancNavCount();
+  toast('Base zerada. Backup do estado anterior salvo no Histórico.','ok');
+}
+
 function bkClearAll() {
   if (!confirm('Apagar todo o historico de backups? O dado atual no navegador nao sera apagado.')) return;
   localStorage.removeItem(BK_HIST_KEY);
@@ -3043,6 +3100,32 @@ window.addEventListener('load', function() {
     <button class="bbtn bbtn-blue" onclick="bkImport()">⇧ Importar JSON</button>
     <button class="bbtn bbtn-green" onclick="bkExportJSON()">⇩ Exportar JSON</button>
     <button class="bbtn bbtn-gold" onclick="bkExportHTML()">⇩ Salvar HTML</button>
+    <button class="bbtn bbtn-red" onclick="openZerarBase()">🗑 Zerar Base</button>
+  </div>
+</div>
+
+<!-- Zerar Base — exige senha do login atual + confirmação digitada. Tira um
+     backup automático no Histórico antes de apagar, pra dar pra restaurar
+     por lá se for engano. -->
+<div class="overlay" id="modal-zerar-base">
+  <div class="modal" style="width:440px">
+    <h3 style="color:#f87171">🗑 Zerar Base</h3>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.65;margin-bottom:16px">
+      Isso apaga <strong id="zerar-resumo" style="color:var(--text)">—</strong> desta base permanentemente. Um backup automático do estado atual é salvo no Histórico antes de apagar — é a única forma de recuperar depois.
+    </div>
+    <div class="fld" style="margin-bottom:12px">
+      <label>Digite <strong>ZERAR</strong> pra confirmar</label>
+      <input id="zerar-confirm-txt" placeholder="ZERAR">
+    </div>
+    <div class="fld">
+      <label>Sua senha de login</label>
+      <input id="zerar-confirm-pass" type="password" placeholder="Senha">
+    </div>
+    <div id="zerar-err" style="color:#f87171;font-size:12px;margin-top:8px"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-zerar-base')">Cancelar</button>
+      <button class="btn" style="background:#ef4444;color:#fff" onclick="confirmarZerarBase()" id="zerar-confirm-btn">Zerar Tudo</button>
+    </div>
   </div>
 </div>
 
