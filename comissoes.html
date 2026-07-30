@@ -628,7 +628,7 @@
   // ══════════════════════════════════════════
   function openZerarComissoes(){
     document.getElementById('zerarResumo').textContent =
-      `${records.length} registro(s) de comissão e ${vendors.length} vendedor(es)/pasta(s)`;
+      `${records.length} registro(s) de comissão (os ${vendors.length} vendedor(es)/pasta(s) são mantidos)`;
     document.getElementById('zerarConfirmTxt').value = '';
     document.getElementById('zerarConfirmPass').value = '';
     document.getElementById('zerarErr').textContent = '';
@@ -653,14 +653,15 @@
 
     try{ exportarJSON(); }catch(e){ console.warn('exportarJSON antes de zerar falhou:',e); }
 
+    // Zera só os registros de comissão — as pastas de vendedor (vendors) ficam
+    // fixas, não são apagadas, pra não precisar recriar toda vez.
     records=[];
-    vendors=[];
     closeZerarModal();
     save();
     showHome();
     renderSidebar();
-    backupLog('Zerar Comissões', 'Todos os registros e vendedores apagados');
-    alert('Comissões zeradas. Um backup JSON foi baixado automaticamente antes de apagar.');
+    backupLog('Zerar Comissões', 'Registros apagados (vendedores mantidos)');
+    alert('Registros de comissão zerados. Vendedores/pastas foram mantidos. Um backup JSON foi baixado automaticamente antes de apagar.');
   }
 
   function importarJSONClick(){
