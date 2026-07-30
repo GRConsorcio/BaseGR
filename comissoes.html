@@ -36,6 +36,8 @@
   .btn-back-import:hover { background: rgba(74,144,217,0.14); }
   .btn-back-export { border: 1px solid #3EA86B; color: #6FD99A; }
   .btn-back-export:hover { background: rgba(62,168,107,0.14); }
+  .btn-back-danger { border: 1px solid #E05252; color: #F08A8A; }
+  .btn-back-danger:hover { background: rgba(224,82,82,0.14); }
   .btn-back-html { border: 1px solid var(--gold); color: var(--gold-light); }
   .btn-back-html:hover { background: rgba(201,168,76,0.14); }
 
@@ -249,6 +251,7 @@
       <button class="btn-backup btn-back-import" onclick="importarJSONClick()">⬆ Importar JSON</button>
       <button class="btn-backup btn-back-export" onclick="exportarJSON()">⬇ Exportar JSON</button>
       <button class="btn-backup btn-back-html" onclick="salvarHTML()">💾 Salvar HTML</button>
+      <button class="btn-backup btn-back-danger" onclick="openZerarComissoes()">🗑 Zerar</button>
       <input type="file" id="importJsonInput" accept="application/json,.json" style="display:none" onchange="importarJSONFile(event)">
     </div>
     <span class="save-badge" id="saveBadge">💾 Salvo automaticamente</span>
@@ -289,6 +292,29 @@
     <div class="modal-actions">
       <button class="btn-modal-cancel" style="flex:1" onclick="limparHistoricoBackup()">🗑 Limpar Histórico</button>
       <button class="btn-confirm" style="flex:1" onclick="closeHistModal()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ZERAR COMISSÕES — exige senha do login atual + confirmação digitada.
+     Não existe histórico de snapshots aqui (só o log de ações), então baixa
+     um JSON de backup automaticamente antes de apagar. -->
+<div class="modal-overlay" id="zerarModalOverlay" onclick="closeZerarModalOutside(event)">
+  <div class="modal" style="width:440px">
+    <h2 style="color:var(--red)">🗑 Zerar Comissões</h2>
+    <p>Isso apaga <strong id="zerarResumo">—</strong> permanentemente. Um arquivo JSON com o backup do estado atual é baixado automaticamente antes de apagar — é a forma de recuperar depois.</p>
+    <div class="modal-field" style="margin-bottom:6px">
+      <label>Digite ZERAR pra confirmar</label>
+      <input type="text" id="zerarConfirmTxt" placeholder="ZERAR">
+    </div>
+    <div class="modal-field">
+      <label>Sua senha de login</label>
+      <input type="password" id="zerarConfirmPass" placeholder="Senha">
+    </div>
+    <div id="zerarErr" style="color:var(--red);font-size:0.78rem;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn-confirm" style="background:var(--red);border-color:var(--red)" onclick="confirmarZerarComissoes()" id="zerarConfirmBtn">Zerar Tudo</button>
+      <button class="btn-modal-cancel" onclick="closeZerarModal()">Cancelar</button>
     </div>
   </div>
 </div>
@@ -592,6 +618,49 @@
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
     backupLog('Exportar JSON', `${records.length} registro(s) · ${vendors.length} vendedor(es)`);
+  }
+
+  // ══════════════════════════════════════════
+  // ZERAR COMISSÕES — apaga todos os registros e pastas de consultor.
+  // Exige digitar "ZERAR" + a senha do login atual (reautentica de verdade
+  // contra o Supabase). Como aqui não existe histórico de snapshots (só o
+  // log de ações), baixa um JSON de backup automaticamente antes de apagar.
+  // ══════════════════════════════════════════
+  function openZerarComissoes(){
+    document.getElementById('zerarResumo').textContent =
+      `${records.length} registro(s) de comissão e ${vendors.length} vendedor(es)/pasta(s)`;
+    document.getElementById('zerarConfirmTxt').value = '';
+    document.getElementById('zerarConfirmPass').value = '';
+    document.getElementById('zerarErr').textContent = '';
+    document.getElementById('zerarModalOverlay').classList.add('open');
+  }
+  function closeZerarModal(){ document.getElementById('zerarModalOverlay').classList.remove('open'); }
+  function closeZerarModalOutside(e){ if(e.target===document.getElementById('zerarModalOverlay')) closeZerarModal(); }
+
+  async function confirmarZerarComissoes(){
+    const txt=(document.getElementById('zerarConfirmTxt').value||'').trim().toUpperCase();
+    const pass=document.getElementById('zerarConfirmPass').value||'';
+    const errEl=document.getElementById('zerarErr');
+    const btn=document.getElementById('zerarConfirmBtn');
+    errEl.textContent='';
+    if(txt!=='ZERAR'){ errEl.textContent='Digite ZERAR (maiúsculo) pra confirmar.'; return; }
+    if(!pass){ errEl.textContent='Informe sua senha.'; return; }
+
+    btn.disabled=true; btn.textContent='Verificando...';
+    const{error:authErr}=await pgrSb.auth.signInWithPassword({email:pgrCurUser.email,password:pass});
+    btn.disabled=false; btn.textContent='Zerar Tudo';
+    if(authErr){ errEl.textContent='Senha incorreta.'; return; }
+
+    try{ exportarJSON(); }catch(e){ console.warn('exportarJSON antes de zerar falhou:',e); }
+
+    records=[];
+    vendors=[];
+    closeZerarModal();
+    save();
+    showHome();
+    renderSidebar();
+    backupLog('Zerar Comissões', 'Todos os registros e vendedores apagados');
+    alert('Comissões zeradas. Um backup JSON foi baixado automaticamente antes de apagar.');
   }
 
   function importarJSONClick(){
