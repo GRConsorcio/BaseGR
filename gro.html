@@ -1310,6 +1310,27 @@ async function aprovarNewcon(tab,ri){
   if(r.p?.[0]?.s==='PAGO') await pgrCheckComissaoAuto(r,0,'PAGO');
   toast('Newcon aprovado'+(r.redutor&&r.consultor?' — comissão lançada.':'.'));
 }
+// Comentários do Newcon — histórico simples por cota (quem escreveu + quando),
+// visível pelo ícone 💬 ao lado do nome do cliente (mostra a contagem).
+function comentarNewcon(tab,ri){
+  const r=D.pagamentos[tab]?.[ri];
+  if(!r) return;
+  const existentes=r.newcon_comentarios||[];
+  const historico=existentes.length
+    ? existentes.map(c=>`[${c.data}] ${c.autor}: ${c.texto}`).join('\n')+'\n\n'
+    : '';
+  const novo=prompt(historico+'Novo comentário sobre o Newcon de "'+r.cliente+'" (deixe em branco pra só ver o histórico acima):');
+  if(!novo||!novo.trim()) return;
+  if(!r.newcon_comentarios) r.newcon_comentarios=[];
+  r.newcon_comentarios.push({
+    texto:novo.trim(),
+    autor:pgrCurUser?.email||'—',
+    data:new Date().toLocaleString('pt-BR')
+  });
+  save();
+  renderPag();
+  toast('Comentário adicionado.');
+}
 // Preenche a lista de sugestões do campo Consultor com quem já apareceu em
 // vendedores/consultores desta base — não trava em nomes fixos.
 function pgrAtualizarListaVendedores(){
@@ -2171,7 +2192,7 @@ function renderPag(){
     const pad='<td>—</td>'.repeat(Math.max(0,6-(r.p||[]).length));
     return`<tr>
       <td style="font-size:11px;white-space:nowrap;color:var(--muted)">${r.data||'—'}</td>
-      <td><strong style="color:var(--text)">${r.cliente||'—'}</strong>${r.newcon==='pendente'?`<span onclick="aprovarNewcon('${tab}',${realIdx})" title="Clique para aprovar no Newcon" style="cursor:pointer;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#60a5fa;border:1px solid rgba(96,165,250,.4);background:rgba(96,165,250,.12);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;white-space:nowrap">Pendente Newcon</span>`:''}</td>
+      <td><strong style="color:var(--text)">${r.cliente||'—'}</strong>${r.newcon==='pendente'?`<span onclick="aprovarNewcon('${tab}',${realIdx})" title="Clique para aprovar no Newcon" style="cursor:pointer;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#60a5fa;border:1px solid rgba(96,165,250,.4);background:rgba(96,165,250,.12);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;white-space:nowrap">Pendente Newcon</span>`:''}${r.pos_venda_cancelada?`<span title="Venda cancelada no CRM enquanto pendente Newcon" style="font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#f87171;border:1px solid rgba(248,113,113,.4);background:rgba(248,113,113,.12);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;white-space:nowrap">Pós Vendas</span>`:''}${r.newcon?`<span onclick="comentarNewcon('${tab}',${realIdx})" title="${(r.newcon_comentarios||[]).length?(r.newcon_comentarios.length+' comentário(s) — clique pra ver/adicionar'):'Adicionar comentário'}" style="cursor:pointer;font-size:8.5px;color:var(--muted2);margin-left:6px;vertical-align:middle">💬${(r.newcon_comentarios||[]).length?r.newcon_comentarios.length:''}</span>`:''}</td>
       <td style="font-size:11px;color:var(--muted)">${r.consultor||'—'}${r.contrato?`<div style="font-size:9.5px;color:var(--muted2)">Contrato: ${r.contrato}</div>`:''}</td>
       <td style="white-space:nowrap;color:var(--gold)">${r.valor?brlk(+r.valor):'—'}${r.redutor?` <span style="font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:1px 4px;vertical-align:middle" title="${r.redutor==='25'?'Comissão integral':'Comissão pela metade'}">-${r.redutor}%</span>`:''}</td>
       ${parcs.join('')}${pad}
