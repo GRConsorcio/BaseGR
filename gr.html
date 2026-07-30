@@ -1296,6 +1296,20 @@ async function pgrRemoveComissao(id){
     console.warn('[Portal GR] Falha ao remover comissão automática:',e.message);
   }
 }
+// Aprovação Newcon — cotas que vieram do CRM nascem "Pendente Newcon" (tag
+// azul) e SÓ geram comissão quando aprovadas aqui manualmente. Reaproveita
+// pgrCheckComissaoAuto (mesma regra de redutor/0,35%) já que a 1ª parcela
+// dessas vendas sempre nasce PAGO.
+async function aprovarNewcon(tab,ri){
+  const r=D.pagamentos[tab]?.[ri];
+  if(!r||r.newcon!=='pendente') return;
+  if(!confirm(`Confirmar aprovação Newcon de "${r.cliente}"? Isso libera o lançamento da comissão automática.`)) return;
+  r.newcon='aprovado';
+  save();
+  renderPag();
+  if(r.p?.[0]?.s==='PAGO') await pgrCheckComissaoAuto(r,0,'PAGO');
+  toast('Newcon aprovado'+(r.redutor&&r.consultor?' — comissão lançada.':'.'));
+}
 // Preenche a lista de sugestões do campo Consultor com quem já apareceu em
 // vendedores/consultores desta base — não trava em nomes fixos.
 function pgrAtualizarListaVendedores(){
@@ -2157,7 +2171,7 @@ function renderPag(){
     const pad='<td>—</td>'.repeat(Math.max(0,6-(r.p||[]).length));
     return`<tr>
       <td style="font-size:11px;white-space:nowrap;color:var(--muted)">${r.data||'—'}</td>
-      <td><strong style="color:var(--text)">${r.cliente||'—'}</strong></td>
+      <td><strong style="color:var(--text)">${r.cliente||'—'}</strong>${r.newcon==='pendente'?`<span onclick="aprovarNewcon('${tab}',${realIdx})" title="Clique para aprovar no Newcon" style="cursor:pointer;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#60a5fa;border:1px solid rgba(96,165,250,.4);background:rgba(96,165,250,.12);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;white-space:nowrap">Pendente Newcon</span>`:''}</td>
       <td style="font-size:11px;color:var(--muted)">${r.consultor||'—'}${r.contrato?`<div style="font-size:9.5px;color:var(--muted2)">Contrato: ${r.contrato}</div>`:''}</td>
       <td style="white-space:nowrap;color:var(--gold)">${r.valor?brlk(+r.valor):'—'}${r.redutor?` <span style="font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:1px 4px;vertical-align:middle" title="${r.redutor==='25'?'Comissão integral':'Comissão pela metade'}">-${r.redutor}%</span>`:''}</td>
       ${parcs.join('')}${pad}
