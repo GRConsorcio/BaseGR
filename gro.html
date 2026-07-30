@@ -2157,8 +2157,8 @@ function renderPag(){
     const pad='<td>—</td>'.repeat(Math.max(0,6-(r.p||[]).length));
     return`<tr>
       <td style="font-size:11px;white-space:nowrap;color:var(--muted)">${r.data||'—'}</td>
-      <td><strong style="color:var(--text)">${r.cliente||'—'}</strong>${r.contrato?`<div style="font-size:9.5px;color:var(--muted2)">Contrato: ${r.contrato}</div>`:''}</td>
-      <td style="font-size:11px;color:var(--muted)">${r.consultor||'—'}</td>
+      <td><strong style="color:var(--text)">${r.cliente||'—'}</strong></td>
+      <td style="font-size:11px;color:var(--muted)">${r.consultor||'—'}${r.contrato?`<div style="font-size:9.5px;color:var(--muted2)">Contrato: ${r.contrato}</div>`:''}</td>
       <td style="white-space:nowrap;color:var(--gold)">${r.valor?brlk(+r.valor):'—'}${r.redutor?` <span style="font-size:9px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:1px 4px;vertical-align:middle" title="${r.redutor==='25'?'Comissão integral':'Comissão pela metade'}">-${r.redutor}%</span>`:''}</td>
       ${parcs.join('')}${pad}
       <td style="white-space:nowrap">
