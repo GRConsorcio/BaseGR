@@ -594,6 +594,7 @@ tfoot td{
     <div class="nav-item" onclick="nav('cancelados',this)" id="nav-cancelados" title="Cancelados"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M4 4l8 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span class="nav-label">Cancelados <span id="canc-nav-count" style="opacity:.6;font-size:10px"></span></span></div>
     <div class="nav-sect">Vendas</div>
     <div class="nav-item" onclick="nav('vendas',this)" title="Vendas Mensais"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 12l4.5-4.5L9 10l5-5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 5H14v3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="nav-label">Vendas Mensais</span></div>
+    <div class="nav-item" onclick="nav('roma',this)" title="ROMA"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2.5" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8h5M8 5.5v5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span class="nav-label">ROMA</span></div>
     <div class="nav-item" onclick="nav('vendedores',this)" title="Ranking"><span class="nav-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.3l-3.8 2 .7-4.3-3.1-3 4.3-.6L8 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></span><span class="nav-label">Ranking</span></div>
   </div>
   <div class="sidebar-foot">
@@ -856,6 +857,26 @@ tfoot td{
     </div>
   </div>
 
+  <!-- ════ ROMA ════ -->
+  <div id="page-roma" class="page">
+    <div class="kpi-row kpi-3" id="roma-kpis"></div>
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">Acompanhamento Mensal de Vendas — ROMA</div>
+        <span class="badge b-green" style="font-size:9.5px">⚡ Calculado automaticamente de Pagamentos (aba ROMA)</span>
+      </div>
+      <div class="panel-body-np">
+        <div class="t-wrap">
+          <table>
+            <thead><tr><th>Mês</th><th>Total de Cotas ROMA</th><th></th></tr></thead>
+            <tbody id="roma-tbody"></tbody>
+            <tfoot id="roma-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ════ VENDEDORES ════ -->
   <div id="page-vendedores" class="page">
     <div class="kpi-row kpi-3" id="vd-kpis"></div>
@@ -1059,7 +1080,11 @@ tfoot td{
       <div class="fld"><label>Data</label><input id="c-data" placeholder="DD/MM/AAAA"></div>
       <div class="fld"><label>Valor Carta (R$)</label><input id="c-val" type="number"></div>
       <div class="fld sp2"><label>Cliente</label><input id="c-cli"></div>
-      <div class="fld sp2"><label>Motivo</label><input id="c-mot" placeholder="Motivo do cancelamento"></div>
+      <div class="fld sp2"><label>Motivo</label><input id="c-mot" placeholder="Motivo do cancelamento">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('c-mot').value='Novo produto vendido'">Novo produto vendido</button>
+        </div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('modal-canc')">Cancelar</button>
@@ -1125,10 +1150,11 @@ const SEED={
     d10:[],
     d16:[],
     d20:[],
-    d25:[]
+    d25:[],
+    roma:[]
   },
-  pag_tabs:['d10','d16','d20','d25'],
-  pag_tab_labels:{d10:'Dia 10',d16:'Dia 16',d20:'Dia 20',d25:'Dia 25'},
+  pag_tabs:['d10','d16','d20','d25','roma'],
+  pag_tab_labels:{d10:'Dia 10',d16:'Dia 16',d20:'Dia 20',d25:'Dia 25',roma:'ROMA'},
   cancelados:[],
   vendas_mes:[],
   vendedores:[]
@@ -1443,6 +1469,7 @@ const titles={
   redutor:'Redutor de Comissão',
   cancelados:'Clientes Cancelados',
   vendas:'Vendas Mensais',
+  roma:'ROMA — Vendas Mensais',
   vendedores:'Ranking de Vendedores',
 };
 
@@ -1624,6 +1651,7 @@ function rPage(p){
   else if(p==='redutor')renderRedutorTab();
   else if(p==='cancelados')rCanc();
   else if(p==='vendas')rVendas();
+  else if(p==='roma')rRoma();
   else if(p==='vendedores')rVend();
 }
 
@@ -2419,7 +2447,7 @@ function mesLabel(dateObj){
 
 // Calcula vendas mensais agrupadas por mês de venda (campo data do cliente)
 function calcVendasFromPag(){
-  const tabs=D.pag_tabs||['d10','d16','d20','d25'];
+  const tabs=(D.pag_tabs||['d10','d16','d20','d25']).filter(t=>t!=='roma');
   const mesesMap={}; // { 'JANEIRO 2026': {fiat:0} }
   tabs.forEach(tab=>{
     const rows=D.pagamentos?.[tab]||[];
@@ -2475,6 +2503,45 @@ function rVendas(){
       <td style="color:var(--muted);font-size:10px">auto</td>
     </tr>`).join('')||'<tr><td colspan="5" class="empty">Nenhum cliente cadastrado em Pagamentos</td></tr>';
   document.getElementById('v-tfoot').innerHTML=`<td>TOTAL</td><td style="color:var(--gold2)">${tF}</td><td></td>`;
+}
+
+// Calcula vendas mensais da aba ROMA (separado do FIAT)
+function calcRomaFromPag(){
+  const rows=D.pagamentos?.roma||[];
+  const mesesMap={}; // { 'JANEIRO 2026': {roma:0} }
+  rows.forEach(r=>{
+    const dt=parseDateBR2(r.data);
+    if(!dt)return;
+    const ml=mesLabel(dt);
+    if(!mesesMap[ml])mesesMap[ml]={roma:0};
+    mesesMap[ml].roma++;
+  });
+  const meses=['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO',
+               'JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+  return Object.entries(mesesMap)
+    .map(([mes,v])=>{
+      const parts=mes.split(' ');
+      const mIdx=meses.indexOf(parts[0]);
+      const yr=+parts[1]||0;
+      return{mes,roma:v.roma,_sort:yr*12+mIdx};
+    })
+    .sort((a,b)=>a._sort-b._sort);
+}
+
+function rRoma(){
+  const vm=calcRomaFromPag();
+  const tR=vm.reduce((a,v)=>a+(+v.roma||0),0);
+  document.getElementById('roma-kpis').innerHTML=`
+    <div class="kpi"><div class="kpi-label">Cotas ROMA</div><div class="kpi-val" style="color:#e55a00">${tR}</div></div>
+    <div class="kpi"><div class="kpi-label">Total de Cotas</div><div class="kpi-val">${tR}</div></div>
+  `;
+  document.getElementById('roma-tbody').innerHTML=vm.map((v)=>`
+    <tr>
+      <td><strong>${v.mes}</strong></td>
+      <td style="font-weight:700;color:var(--gold2)">${v.roma||0}</td>
+      <td style="color:var(--muted);font-size:10px">auto</td>
+    </tr>`).join('')||'<tr><td colspan="3" class="empty">Nenhum cliente cadastrado na aba ROMA de Pagamentos</td></tr>';
+  document.getElementById('roma-tfoot').innerHTML=`<td>TOTAL</td><td style="color:var(--gold2)">${tR}</td><td></td>`;
 }
 
 // ──────────────────────────────────────────
@@ -2813,6 +2880,10 @@ if(!D.pag_tabs){D.pag_tabs=['d10','d16','d20','d25'];D.pag_tab_labels={d10:'Dia 
 if(!D.pagamentos.d25)D.pagamentos.d25=[];
 if(!D.pag_tab_labels.d25)D.pag_tab_labels.d25='Dia 25';
 if(!D.pag_tabs.includes('d25'))D.pag_tabs.push('d25');
+// migrate: ensure roma tab exists
+if(!D.pagamentos.roma)D.pagamentos.roma=[];
+if(!D.pag_tab_labels.roma)D.pag_tab_labels.roma='ROMA';
+if(!D.pag_tabs.includes('roma'))D.pag_tabs.push('roma');
 // migrate: ensure fin_tabs exists
 if(!D.fin_tabs){D.fin_tabs=['mensal'];}
 if(!D.fin_tab_labels){D.fin_tab_labels={mensal:'Resumo Mensal'};}
