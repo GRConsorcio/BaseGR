@@ -2032,12 +2032,15 @@ function rFinDet(mes){
           <button class="btn btn-ok btn-sm" onclick="openLanc('${mes}','receitas')">+ Receita</button>
         </div>
         <div class="panel-body-np">
-          ${d.receitas.map((r,i)=>`
-            <div class="fin-row">
-              <div class="fin-desc">${r.desc}</div>
-              <div class="fin-val" style="color:var(--green)">${brl(+r.val)}</div>
-              <button class="fin-del" onclick="delLanc('${mes}','receitas',${i})">✕</button>
-            </div>`).join('')}
+          <div style="padding:8px 12px 4px"><input type="text" placeholder="🔍 Buscar receita..." oninput="filterFinLanc('${mes}','receitas',this.value)" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 10px;font-size:12px;font-family:Arial,sans-serif;outline:none"></div>
+          <div id="fin-list-receitas-${mes}">
+            ${d.receitas.map((r,i)=>`
+              <div class="fin-row" data-desc="${(r.desc||'').toLowerCase().replace(/"/g,'&quot;')}">
+                <div class="fin-desc">${r.desc}</div>
+                <div class="fin-val" style="color:var(--green)">${brl(+r.val)}</div>
+                <button class="fin-del" onclick="delLanc('${mes}','receitas',${i})">✕</button>
+              </div>`).join('')}
+          </div>
           <div class="fin-row" style="background:var(--surface2)">
             <div class="fin-desc" style="font-weight:700;color:var(--gold2)">TOTAL RECEITAS</div>
             <div class="fin-val" style="color:var(--green)">${brl(tR)}</div>
@@ -2051,12 +2054,15 @@ function rFinDet(mes){
           <button class="btn btn-danger btn-sm" onclick="openLanc('${mes}','despesas')">+ Despesa</button>
         </div>
         <div class="panel-body-np">
-          ${d.despesas.map((r,i)=>`
-            <div class="fin-row">
-              <div class="fin-desc">${r.desc}</div>
-              <div class="fin-val" style="color:var(--red)">${brl(+r.val)}</div>
-              <button class="fin-del" onclick="delLanc('${mes}','despesas',${i})">✕</button>
-            </div>`).join('')}
+          <div style="padding:8px 12px 4px"><input type="text" placeholder="🔍 Buscar despesa..." oninput="filterFinLanc('${mes}','despesas',this.value)" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 10px;font-size:12px;font-family:Arial,sans-serif;outline:none"></div>
+          <div id="fin-list-despesas-${mes}">
+            ${d.despesas.map((r,i)=>`
+              <div class="fin-row" data-desc="${(r.desc||'').toLowerCase().replace(/"/g,'&quot;')}">
+                <div class="fin-desc">${r.desc}</div>
+                <div class="fin-val" style="color:var(--red)">${brl(+r.val)}</div>
+                <button class="fin-del" onclick="delLanc('${mes}','despesas',${i})">✕</button>
+              </div>`).join('')}
+          </div>
           <div class="fin-row" style="background:var(--surface2)">
             <div class="fin-desc" style="font-weight:700;color:var(--gold2)">TOTAL DESPESAS</div>
             <div class="fin-val" style="color:var(--red)">${brl(tD)}</div>
@@ -2065,6 +2071,13 @@ function rFinDet(mes){
         </div>
       </div>
     </div>`;
+}
+
+function filterFinLanc(mes,tipo,val){
+  const q=(val||'').toLowerCase();
+  document.querySelectorAll('#fin-list-'+tipo+'-'+mes+' .fin-row').forEach(row=>{
+    row.style.display=row.dataset.desc.includes(q)?'':'none';
+  });
 }
 
 // ──────────────────────────────────────────
