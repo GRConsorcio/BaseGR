@@ -894,7 +894,13 @@
     const tabs=document.getElementById('monthTabs');
     tabs.innerHTML=`<button class="mtab ${activeMonthFilter===''?'active':''}" onclick="setMonthFilter('')">Todos</button>`+
       months.map(m=>`<button class="mtab ${activeMonthFilter===m?'active':''}" onclick="setMonthFilter('${m}')">${fmtMonth(m)}</button>`).join('');
-    const filtered=activeMonthFilter?allForC.filter(r=>r.month===activeMonthFilter):allForC;
+    // Pedido do usuário: parcelas mais adiantadas (2/2, 3/3...) sempre acima das
+    // mais no início (1/2, 1/3...) — ordena pelo numerador da parcela, decrescente.
+    // sort() é estável (ES2019+), então dentro do mesmo numerador a ordem original
+    // (cronológica de inserção) é preservada.
+    const parcNum=p=>parseInt((p||'').split('/')[0],10)||0;
+    const filtered=(activeMonthFilter?allForC.filter(r=>r.month===activeMonthFilter):allForC)
+      .slice().sort((a,b)=>parcNum(b.parc)-parcNum(a.parc));
     const tbody=document.getElementById('tableBody');
     const empty=document.getElementById('emptyRow');
     if(filtered.length===0){tbody.innerHTML='';empty.style.display='block';}
@@ -910,8 +916,8 @@
           <td><span class="badge badge-perc">${parseFloat(r.perc).toFixed(2).replace('.',',')}%</span></td>
           <td class="td-comm">${fmt(r.commission)}</td>
           <td><div class="actions">
-            <button class="btn-sm btn-edit-sm" onclick="editRecord(${r.id})">✏️</button>
-            <button class="btn-sm btn-del-sm" onclick="deleteRecord(${r.id})">🗑</button>
+            <button class="btn-sm btn-edit-sm" onclick="editRecord('${r.id}')">✏️</button>
+            <button class="btn-sm btn-del-sm" onclick="deleteRecord('${r.id}')">🗑</button>
           </div></td>
         </tr>`).join('');
     }
