@@ -826,6 +826,7 @@ tfoot td{
               <th style="cursor:pointer;user-select:none" onclick="setCancOrdem('alfa')">Cliente <span id="canc-th-alfa"></span></th>
               <th style="cursor:pointer;user-select:none" onclick="setCancOrdem('valor')">Valor Carta <span id="canc-th-valor"></span></th>
               <th>Grupo Vencimento</th>
+              <th>Parcela</th>
               <th>Motivo</th>
               <th></th>
             </tr></thead>
@@ -1080,6 +1081,7 @@ tfoot td{
       <div class="fld"><label>Data</label><input id="c-data" placeholder="DD/MM/AAAA"></div>
       <div class="fld"><label>Valor Carta (R$)</label><input id="c-val" type="number"></div>
       <div class="fld sp2"><label>Cliente</label><input id="c-cli"></div>
+      <div class="fld"><label>Cancelou na parcela nº</label><input id="c-parc" type="number" min="1" placeholder="Ex: 3"></div>
       <div class="fld sp2"><label>Motivo</label><input id="c-mot" placeholder="Motivo do cancelamento">
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
           <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('c-mot').value='Novo produto vendido'">Novo produto vendido</button>
@@ -2254,20 +2256,22 @@ function updParcSt(tab,ri,pi,val,sel){
   if(pi<2) pgrCheckComissaoAuto(r,pi,val);
   // Auto-transfer: if ANY parcela is CANCELADO, move client to cancelados
   if(val==='CANCELADO'){
-    autoTransferCancelado(tab,ri);
+    autoTransferCancelado(tab,ri,pi);
     return; // renderPag and save are called inside
   }
   save();
   updateCancNavCount();
 }
 
-function autoTransferCancelado(tab, ri){
+function autoTransferCancelado(tab, ri, pi){
   const r = D.pagamentos[tab][ri];
   if(!r) return;
   // Check if already in cancelados (avoid duplicates)
   const jaExiste = (D.cancelados||[]).some(c => c._pag_id && c._pag_id === r.id);
   if(!jaExiste){
     const label = (D.pag_tab_labels||{})[tab] || tab;
+    const parcNum = Number.isInteger(pi) ? pi+1 : null;
+    const parcData = (Number.isInteger(pi) && r.p && r.p[pi]) ? r.p[pi].d : '';
     const c = {
       id: uid(),
       _pag_id: r.id,          // link to origin
@@ -2275,6 +2279,8 @@ function autoTransferCancelado(tab, ri){
       cliente: r.cliente,
       valor: r.valor,
       grupo: label,
+      parcela: parcNum,       // em qual parcela o cliente cancelou
+      parcelaData: parcData,
       motivo: 'Parcela cancelada — transferido automaticamente'
     };
     if(!D.cancelados) D.cancelados=[];
@@ -2421,10 +2427,11 @@ function rCanc(){
       <td><strong>${c.cliente||'—'}</strong>${isAuto?` <span class="badge b-red" style="font-size:9px;margin-left:4px">AUTO</span>`:''}</td>
       <td style="color:var(--red)">${c.valor?brl(+c.valor):'—'}</td>
       <td><span class="badge b-muted">${c.grupo||'Manual'}</span></td>
+      <td><span class="ed" onclick="inlineEd(this,'cancelados',${realIdx},'parcela')" style="color:${c.parcela?'var(--red)':'var(--muted)'};font-weight:${c.parcela?'700':'400'}">${c.parcela?`${c.parcela}ª${c.parcelaData?` <span style="color:var(--muted);font-weight:400;font-size:10.5px">(${c.parcelaData})</span>`:''}`:'—'}</span></td>
       <td><span class="ed" onclick="inlineEd(this,'cancelados',${realIdx},'motivo')" style="color:var(--muted)">${c.motivo||'—'}</span></td>
       <td><button class="fin-del" onclick="delCancelado(${realIdx})">✕</button></td>
     </tr>`;
-  }).join('')||'<tr><td colspan="6" class="empty"><div class="ei">🚫</div>Nenhum cancelamento encontrado</td></tr>';
+  }).join('')||'<tr><td colspan="7" class="empty"><div class="ei">🚫</div>Nenhum cancelamento encontrado</td></tr>';
 
   updateCancNavCount();
 }
@@ -2846,6 +2853,7 @@ function saveCanc(){
     cliente:document.getElementById('c-cli').value.trim().toUpperCase(),
     valor:parseFloat(document.getElementById('c-val').value)||0,
     grupo:'Manual',
+    parcela:parseInt(document.getElementById('c-parc').value)||null,
     motivo:document.getElementById('c-mot').value.trim()
   };
   if(!c.cliente)return;
