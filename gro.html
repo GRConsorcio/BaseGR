@@ -826,6 +826,8 @@ tfoot td{
               <th style="cursor:pointer;user-select:none" onclick="setCancOrdem('alfa')">Cliente <span id="canc-th-alfa"></span></th>
               <th style="cursor:pointer;user-select:none" onclick="setCancOrdem('valor')">Valor Carta <span id="canc-th-valor"></span></th>
               <th>Grupo Vencimento</th>
+              <th>Consultor</th>
+              <th>Contrato</th>
               <th>Parcela</th>
               <th>Motivo</th>
               <th></th>
@@ -1081,6 +1083,8 @@ tfoot td{
       <div class="fld"><label>Data</label><input id="c-data" placeholder="DD/MM/AAAA"></div>
       <div class="fld"><label>Valor Carta (R$)</label><input id="c-val" type="number"></div>
       <div class="fld sp2"><label>Cliente</label><input id="c-cli"></div>
+      <div class="fld"><label>Consultor</label><input id="c-cons"></div>
+      <div class="fld"><label>Nº Contrato</label><input id="c-contrato"></div>
       <div class="fld"><label>Cancelou na parcela nº</label><input id="c-parc" type="number" min="1" placeholder="Ex: 3"></div>
       <div class="fld sp2"><label>Motivo</label><input id="c-mot" placeholder="Motivo do cancelamento">
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
@@ -2277,6 +2281,8 @@ function autoTransferCancelado(tab, ri, pi){
       _pag_id: r.id,          // link to origin
       data: new Date().toLocaleDateString('pt-BR'),
       cliente: r.cliente,
+      consultor: r.consultor||'',   // nome do consultor da venda original
+      contrato: r.contrato||'',     // número do contrato da venda original
       valor: r.valor,
       grupo: label,
       parcela: parcNum,       // em qual parcela o cliente cancelou
@@ -2350,7 +2356,7 @@ function rCanc(){
   let cancs=[...allCancs].filter(c=>{
     if(fGrupo&&(c.grupo||'Manual')!==fGrupo)return false;
     if(q){
-      const haystack=((c.cliente||'')+' '+(c.motivo||'')).toLowerCase();
+      const haystack=((c.cliente||'')+' '+(c.motivo||'')+' '+(c.consultor||'')+' '+(c.contrato||'')).toLowerCase();
       if(!haystack.includes(q))return false;
     }
     return true;
@@ -2427,11 +2433,13 @@ function rCanc(){
       <td><strong>${c.cliente||'—'}</strong>${isAuto?` <span class="badge b-red" style="font-size:9px;margin-left:4px">AUTO</span>`:''}</td>
       <td style="color:var(--red)">${c.valor?brl(+c.valor):'—'}</td>
       <td><span class="badge b-muted">${c.grupo||'Manual'}</span></td>
+      <td><span class="ed" onclick="inlineEd(this,'cancelados',${realIdx},'consultor')" style="color:var(--muted)">${c.consultor||'—'}</span></td>
+      <td><span class="ed" onclick="inlineEd(this,'cancelados',${realIdx},'contrato')" style="color:var(--muted)">${c.contrato||'—'}</span></td>
       <td><span class="ed" onclick="inlineEd(this,'cancelados',${realIdx},'parcela')" style="color:${c.parcela?'var(--red)':'var(--muted)'};font-weight:${c.parcela?'700':'400'}">${c.parcela?`${c.parcela}ª${c.parcelaData?` <span style="color:var(--muted);font-weight:400;font-size:10.5px">(${c.parcelaData})</span>`:''}`:'—'}</span></td>
       <td><span class="ed" onclick="inlineEd(this,'cancelados',${realIdx},'motivo')" style="color:var(--muted)">${c.motivo||'—'}</span></td>
       <td><button class="fin-del" onclick="delCancelado(${realIdx})">✕</button></td>
     </tr>`;
-  }).join('')||'<tr><td colspan="7" class="empty"><div class="ei">🚫</div>Nenhum cancelamento encontrado</td></tr>';
+  }).join('')||'<tr><td colspan="9" class="empty"><div class="ei">🚫</div>Nenhum cancelamento encontrado</td></tr>';
 
   updateCancNavCount();
 }
@@ -2851,6 +2859,8 @@ function saveCanc(){
   const c={id:uid(),
     data:document.getElementById('c-data').value.trim(),
     cliente:document.getElementById('c-cli').value.trim().toUpperCase(),
+    consultor:document.getElementById('c-cons').value.trim(),
+    contrato:document.getElementById('c-contrato').value.trim(),
     valor:parseFloat(document.getElementById('c-val').value)||0,
     grupo:'Manual',
     parcela:parseInt(document.getElementById('c-parc').value)||null,
