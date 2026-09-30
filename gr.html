@@ -1231,37 +1231,145 @@ async function pgrOnAuthed(user){
   await pgrInitApp();
 }
 
-// Busca o estado salvo na nuvem — se existir e não estiver vazio, substitui o
-// que foi carregado do localStorage (nuvem é a fonte de verdade quando disponível).
+// <SYNC-ENGINE>
+// ══════════════════════════════════════════
+// SINCRONIZAÇÃO SEGURA COM A NUVEM
+// Antes: cada gravação mandava o estado INTEIRO desta tela por cima do que estava na nuvem, e ao abrir a
+// página a nuvem substituía tudo. Por isso (1) F5 logo depois de editar trazia os dados antigos de volta
+// (o envio ainda não tinha saído) e (2) uma aba/PC com cópia velha apagava o que outra tela tinha feito
+// (inclusive vendas que o CRM manda pra base).
+// Agora: a gravação só vale se a nuvem não mudou desde a última sincronização (updated_at). Se mudou, as
+// duas versões são JUNTADAS linha a linha (merge de 3 vias: base × a minha × a da nuvem). Edição que não
+// chegou na nuvem antes do F5 fica marcada como "pendente" e é reenviada ao abrir.
+// ══════════════════════════════════════════
+let pgrSyncAt=null, pgrBaseStr=null, pgrPushing=false, pgrPushAgain=false, pgrPushRetry=null;
+const pgrEq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const pgrTemId=x=>x&&typeof x==='object'&&!Array.isArray(x)&&x.id!=null;
+const pgrPrimit=a=>Array.isArray(a)&&a.every(x=>x===null||typeof x!=='object');
+function pgrMerge3(b,l,r){
+  if(pgrEq(l,r)) return l;
+  if(pgrEq(l,b)) return r;   // só a nuvem mudou
+  if(pgrEq(r,b)) return l;   // só eu mudei
+  // os dois mudaram — listas de objetos com id: junta por id
+  if(Array.isArray(l)&&Array.isArray(r)&&l.every(pgrTemId)&&r.every(pgrTemId)&&(b==null||(Array.isArray(b)&&b.every(pgrTemId)))){
+    const bm=new Map((b||[]).map(x=>[String(x.id),x])), rm=new Map(r.map(x=>[String(x.id),x])), seen=new Set(), out=[];
+    for(const x of l){
+      const id=String(x.id); seen.add(id);
+      if(rm.has(id)) out.push(pgrMerge3(bm.get(id),x,rm.get(id)));
+      else if(bm.has(id)){ if(!pgrEq(bm.get(id),x)) out.push(x); }   // a nuvem apagou; se eu tinha mexido nele, mantém
+      else out.push(x);                                              // novo aqui
+    }
+    for(const x of r){
+      const id=String(x.id); if(seen.has(id)) continue;
+      if(bm.has(id)){ if(!pgrEq(bm.get(id),x)) out.push(x); }        // eu apaguei; se a nuvem mexeu depois, mantém
+      else out.push(x);                                              // novo na nuvem (ex.: venda enviada pelo CRM)
+    }
+    return out;
+  }
+  // listas de valores simples (ex.: nomes): base mantida pelos dois lados + o que qualquer lado acrescentou
+  if(pgrPrimit(l)&&pgrPrimit(r)&&(b==null||pgrPrimit(b))){
+    const bs=new Set(b||[]), ls=new Set(l), rs=new Set(r), out=[], add=x=>{ if(!out.includes(x)) out.push(x); };
+    (b||[]).forEach(x=>{ if(ls.has(x)&&rs.has(x)) add(x); });
+    [...l,...r].forEach(x=>{ if(!bs.has(x)) add(x); });
+    return out;
+  }
+  if(l&&r&&typeof l==='object'&&typeof r==='object'&&!Array.isArray(l)&&!Array.isArray(r)){
+    const o={};
+    for(const k of new Set([...Object.keys(l),...Object.keys(r)])){
+      const bv=(b&&typeof b==='object')?b[k]:undefined;
+      if(!(k in l)){ if(!pgrEq(bv,r[k])) o[k]=r[k]; }                // eu removi; a nuvem mexeu → mantém a dela
+      else if(!(k in r)){ if(!pgrEq(bv,l[k])) o[k]=l[k]; }           // a nuvem removeu; eu mexi → mantém o meu
+      else o[k]=pgrMerge3(bv,l[k],r[k]);
+    }
+    return o;
+  }
+  return l;   // mesmo campo alterado nos dois lados: vale o que eu digitei aqui
+}
+const pgrSemHora=o=>{ const c=JSON.parse(JSON.stringify(o)); delete c.saved_at; return JSON.stringify(c); };
+function pgrMudou(){ try{ return !pgrBaseStr||pgrSemHora(D)!==pgrSemHora(JSON.parse(pgrBaseStr)); }catch(e){ return true; } }
+function pgrAviso(msg,erro){ try{ toast(msg,!!erro); }catch(e){} }
+function pgrPonto(cor){ const d=document.getElementById('pgr-cloud-dot'); if(d) d.style.color=cor; }
+function pgrRefreshView(){ try{ rPage(curPage); if(typeof updateCancNavCount==='function') updateCancNavCount(); }catch(e){ console.warn('[Portal GR] refresh:',e.message); } }
+
+// Busca o estado salvo na nuvem. Se sobrou edição local que não chegou lá (F5/queda de rede antes do envio),
+// junta as duas em vez de descartar a local.
 async function pgrPullCloud(){
   try{
-    const{data,error}=await pgrSb.from('portal_gr_estado').select('dados').eq('empresa',PGR_EMPRESA).maybeSingle();
+    const{data,error}=await pgrSb.from('portal_gr_estado').select('dados,updated_at').eq('empresa',PGR_EMPRESA).maybeSingle();
     if(error) throw error;
     if(data&&data.dados&&Object.keys(data.dados).length){
-      D=data.dados;
-      localStorage.setItem(KEY,JSON.stringify(D));
+      const pendente=localStorage.getItem(KEY+'_pendente')==='1';
+      if(pendente){
+        let base=null; try{ base=JSON.parse(localStorage.getItem(KEY+'_base')||'null'); }catch(e){}
+        const antes=pgrSemHora(D);
+        D=pgrMerge3(base||data.dados,D,data.dados);
+        pgrSyncAt=data.updated_at; pgrBaseStr=JSON.stringify(data.dados);
+        localStorage.setItem(KEY,JSON.stringify(D)); localStorage.setItem(KEY+'_base',pgrBaseStr);
+        if(pgrSemHora(D)!==pgrSemHora(data.dados)) setTimeout(()=>pgrAviso('Alterações que ainda não tinham sido enviadas foram recuperadas ✓'),700);
+        pgrPushNow(); return;
+      }
+      D=data.dados; pgrSyncAt=data.updated_at; pgrBaseStr=JSON.stringify(D);
+      localStorage.setItem(KEY,JSON.stringify(D)); localStorage.setItem(KEY+'_base',pgrBaseStr);
     }
   }catch(e){
     console.warn('[Portal GR] Falha ao buscar da nuvem, usando dados locais:',e.message);
   }
 }
-// Envia o estado atual pra nuvem — debounced (evita 1 request por tecla) e
-// silencioso (não trava a UI; o save local já aconteceu antes disso rodar).
+// Marca como pendente e envia (debounced, evita 1 request por tecla)
 function pgrPushCloud(){
+  localStorage.setItem(KEY+'_pendente','1');
+  pgrPonto('#f59e0b');
   clearTimeout(pgrCloudTimer);
-  pgrCloudTimer=setTimeout(async()=>{
-    try{
-      const{error}=await pgrSb.from('portal_gr_estado').update({
-        dados:D,updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null
-      }).eq('empresa',PGR_EMPRESA);
-      if(error) throw error;
-      const cloudDot=document.getElementById('pgr-cloud-dot');
-      if(cloudDot) cloudDot.style.color='#22c55e';
-    }catch(e){
-      console.warn('[Portal GR] Falha ao salvar na nuvem (dados continuam salvos localmente):',e.message);
-    }
-  },800);
+  pgrCloudTimer=setTimeout(pgrPushNow,500);
 }
+async function pgrPushNow(){
+  if(!pgrCurUser) return;
+  if(pgrPushing){ pgrPushAgain=true; return; }
+  pgrPushing=true; clearTimeout(pgrPushRetry);
+  try{
+    for(let tent=0;tent<5;tent++){
+      let q=pgrSb.from('portal_gr_estado').update({dados:D,updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null}).eq('empresa',PGR_EMPRESA);
+      if(pgrSyncAt) q=q.eq('updated_at',pgrSyncAt);   // só grava se ninguém mexeu na nuvem desde a última sincronização
+      const{data,error}=await q.select('updated_at');
+      if(error) throw error;
+      if(data&&data.length){
+        pgrSyncAt=data[0].updated_at; pgrBaseStr=JSON.stringify(D);
+        localStorage.setItem(KEY+'_base',pgrBaseStr); localStorage.removeItem(KEY+'_pendente');
+        pgrPonto('#22c55e'); return;
+      }
+      // a nuvem mudou (outra aba/PC ou o CRM): junta as duas versões e tenta de novo
+      const{data:rem,error:e2}=await pgrSb.from('portal_gr_estado').select('dados,updated_at').eq('empresa',PGR_EMPRESA).maybeSingle();
+      if(e2) throw e2;
+      if(!rem||!rem.dados) break;
+      let base=null; try{ base=JSON.parse(pgrBaseStr||'null'); }catch(e){}
+      const antes=pgrSemHora(D);
+      D=pgrMerge3(base||rem.dados,D,rem.dados);
+      pgrSyncAt=rem.updated_at;
+      localStorage.setItem(KEY,JSON.stringify(D));
+      if(pgrSemHora(D)!==antes){ pgrRefreshView(); pgrAviso('Dados de outra sessão foram juntados com os seus ✓'); }
+    }
+    throw new Error('a nuvem mudou várias vezes seguidas');
+  }catch(e){
+    console.warn('[Portal GR] Falha ao salvar na nuvem (dados continuam salvos localmente e serão reenviados):',e.message);
+    pgrPonto('#ef4444');
+    pgrPushRetry=setTimeout(pgrPushNow,6000);
+  }finally{
+    pgrPushing=false;
+    if(pgrPushAgain){ pgrPushAgain=false; pgrPushNow(); }
+  }
+}
+// Ao voltar pra esta aba: se não há nada pendente e a nuvem tem versão mais nova (outra aba/PC/CRM), atualiza.
+document.addEventListener('visibilitychange',async()=>{
+  if(document.hidden||!pgrCurUser||pgrPushing||!pgrSyncAt||localStorage.getItem(KEY+'_pendente')==='1') return;
+  try{
+    const{data}=await pgrSb.from('portal_gr_estado').select('dados,updated_at').eq('empresa',PGR_EMPRESA).maybeSingle();
+    if(!data||!data.dados||data.updated_at===pgrSyncAt||localStorage.getItem(KEY+'_pendente')==='1'||pgrPushing) return;
+    D=data.dados; pgrSyncAt=data.updated_at; pgrBaseStr=JSON.stringify(D);
+    localStorage.setItem(KEY,JSON.stringify(D)); localStorage.setItem(KEY+'_base',pgrBaseStr);
+    pgrRefreshView(); pgrAviso('Dados atualizados com as alterações mais recentes ✓');
+  }catch(e){}
+});
+// </SYNC-ENGINE>
 
 // ══════════════════════════════════════════
 // COMISSÃO AUTOMÁTICA (conecta com o app Comissões — mesmo Supabase)
@@ -1285,49 +1393,71 @@ async function pgrCheckComissaoAuto(row,pi,status){
     const credit=row.redutor==='50'?+(valorCheio/2).toFixed(2):valorCheio;
     const perc=0.35;
     const commission=+(credit*perc/100).toFixed(2);
-    await pgrUpsertComissao({
+    const acao=await pgrUpsertComissao({
       id:origemId,consultant:row.consultor,month:pgrMesAtual(),client:row.cliente||'',
       credit,parc:(pi+1)+'/2',perc:String(perc),commission,
       _auto:true,_empresa:PGR_EMPRESA
     });
-    toast('Comissão automática lançada: '+row.consultor+' — R$ '+commission.toFixed(2).replace('.',','));
+    if(acao==='editada') toast('Essa comissão foi editada manualmente em Comissões — mantida como está (não sobrescrita)');
+    else if(acao==='apagada') toast('Essa comissão foi apagada manualmente em Comissões — não foi recriada');
+    else if(acao!=='erro') toast('Comissão automática lançada: '+row.consultor+' — R$ '+commission.toFixed(2).replace('.',','));
   } else {
     await pgrRemoveComissao(origemId);
   }
 }
+// <COMISSOES-MUTAR>
+// Lê a versão MAIS NOVA das comissões na nuvem, aplica só a mudança de UM registro e grava com trava
+// (só vale se ninguém mexeu no meio; se mexeu, lê de novo e refaz). Nunca manda a lista antiga inteira por cima.
+async function pgrComissoesMutar(fn){
+  for(let t=0;t<6;t++){
+    const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados,updated_at').eq('chave','default').maybeSingle();
+    if(error) throw error;
+    const dados=data?.dados&&Object.keys(data.dados).length?data.dados:{};
+    dados.records=dados.records||[]; dados.vendors=dados.vendors||[]; dados.removed_auto=dados.removed_auto||[];
+    if(fn(dados)===false) return false;
+    let q=pgrSb.from('portal_comissoes_estado').update({dados,updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null}).eq('chave','default');
+    if(data?.updated_at) q=q.eq('updated_at',data.updated_at);
+    const{data:up,error:e2}=await q.select('updated_at');
+    if(e2) throw e2;
+    if(up&&up.length) return true;
+    await new Promise(r=>setTimeout(r,120*(t+1)+Math.random()*120));
+  }
+  throw new Error('as comissões foram alteradas várias vezes seguidas — tente de novo');
+}
+// Regras pra não brigar com quem edita na tela de Comissões:
+//  • comissão automática que foi EDITADA à mão (_editado) não é sobrescrita;
+//  • comissão automática que foi APAGADA à mão (removed_auto) não é recriada — só volta se a parcela for
+//    desmarcada e marcada como PAGO de novo (aí o pgrRemoveComissao limpa o "apagado").
 async function pgrUpsertComissao(rec){
   try{
-    const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados').eq('chave','default').maybeSingle();
-    if(error) throw error;
-    const dados=data?.dados&&Object.keys(data.dados).length?data.dados:{records:[],vendors:[]};
-    dados.records=dados.records||[];
-    dados.vendors=dados.vendors||[];
-    const idx=dados.records.findIndex(r=>r.id===rec.id);
-    if(idx>-1) dados.records[idx]=rec; else dados.records.push(rec);
-    if(!dados.vendors.includes(rec.consultant)) dados.vendors.push(rec.consultant);
-    const{error:upErr}=await pgrSb.from('portal_comissoes_estado').update({
-      dados,updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null
-    }).eq('chave','default');
-    if(upErr) throw upErr;
+    let acao='lancada';
+    await pgrComissoesMutar(dados=>{
+      if(dados.removed_auto.includes(rec.id)){ acao='apagada'; return false; }
+      const idx=dados.records.findIndex(r=>r.id===rec.id);
+      if(idx>-1){
+        if(dados.records[idx]._editado){ acao='editada'; return false; }
+        dados.records[idx]=rec; acao='atualizada';
+      } else dados.records.push(rec);
+      if(!dados.vendors.includes(rec.consultant)) dados.vendors.push(rec.consultant);
+    });
+    return acao;
   }catch(e){
     console.warn('[Portal GR] Falha ao lançar comissão automática:',e.message);
     toast('Falha ao lançar comissão automática — lance manualmente em Comissões','err');
+    return 'erro';
   }
 }
 async function pgrRemoveComissao(id){
   try{
-    const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados').eq('chave','default').maybeSingle();
-    if(error) throw error;
-    const dados=data?.dados&&Object.keys(data.dados).length?data.dados:{records:[],vendors:[]};
-    dados.records=(dados.records||[]).filter(r=>r.id!==id);
-    const{error:upErr}=await pgrSb.from('portal_comissoes_estado').update({
-      dados,updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null
-    }).eq('chave','default');
-    if(upErr) throw upErr;
+    await pgrComissoesMutar(dados=>{
+      dados.records=dados.records.filter(r=>r.id!==id);
+      dados.removed_auto=dados.removed_auto.filter(x=>x!==id);
+    });
   }catch(e){
     console.warn('[Portal GR] Falha ao remover comissão automática:',e.message);
   }
 }
+// </COMISSOES-MUTAR>
 // Aprovação Newcon — cotas que vieram do CRM nascem "Pendente Newcon" (tag
 // azul) e SÓ geram comissão quando aprovadas aqui manualmente. Reaproveita
 // pgrCheckComissaoAuto (mesma regra de redutor/0,35%) já que a 1ª parcela
@@ -1439,7 +1569,15 @@ function save(){
   toast('Dados salvos ✓');
   pgrPushCloud();
 }
-window.addEventListener('beforeunload',save);
+// Ao fechar/F5: guarda o estado local e, se ainda há algo que não chegou na nuvem, deixa marcado como
+// pendente — na próxima abertura é reenviado (antes, a nuvem substituía tudo e a edição sumia).
+window.addEventListener('beforeunload',()=>{
+  try{
+    D.saved_at=new Date().toLocaleString('pt-BR');
+    localStorage.setItem(KEY,JSON.stringify(D));
+    if(localStorage.getItem(KEY+'_pendente')==='1'||pgrMudou()) localStorage.setItem(KEY+'_pendente','1');
+  }catch(e){}
+});
 
 // ──────────────────────────────────────────
 // FORMATTERS

@@ -534,39 +534,169 @@
     if(lbl) lbl.textContent=user.email;
     await pgrInitApp();
   }
+  // <SYNC-ENGINE-COMISSOES>
+  // ══════════════════════════════════════════
+  // SINCRONIZAÇÃO SEGURA COM A NUVEM
+  // Antes: cada salvamento mandava a lista INTEIRA desta tela por cima da nuvem, e ao abrir a nuvem
+  // substituía a lista local. Resultado: (1) F5 logo depois de editar trazia o valor antigo de volta
+  // (o envio ainda não tinha saído) e (2) uma tela/aba com cópia velha apagava o que outra fez e
+  // recriava o que você tinha apagado.
+  // Agora: só grava se a nuvem não mudou desde a última sincronização (updated_at); se mudou, JUNTA as
+  // duas versões registro a registro (merge de 3 vias); e edição que não chegou na nuvem antes do F5 fica
+  // "pendente" e é reenviada ao abrir. Registro automático editado à mão ganha _editado (a Base não
+  // sobrescreve) e automático apagado à mão vai pra removed_auto (a Base não recria).
+  let removedAuto = [];
+  let pgrSyncAt=null, pgrBaseStr=null, pgrPushing=false, pgrPushAgain=false, pgrPushRetry=null;
+  const pgrEq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+  const pgrTemId=x=>x&&typeof x==='object'&&!Array.isArray(x)&&x.id!=null;
+  const pgrPrimit=a=>Array.isArray(a)&&a.every(x=>x===null||typeof x!=='object');
+  function pgrMerge3(b,l,r){
+    if(pgrEq(l,r)) return l;
+    if(pgrEq(l,b)) return r;
+    if(pgrEq(r,b)) return l;
+    if(Array.isArray(l)&&Array.isArray(r)&&l.every(pgrTemId)&&r.every(pgrTemId)&&(b==null||(Array.isArray(b)&&b.every(pgrTemId)))){
+      const bm=new Map((b||[]).map(x=>[String(x.id),x])), rm=new Map(r.map(x=>[String(x.id),x])), seen=new Set(), out=[];
+      for(const x of l){
+        const id=String(x.id); seen.add(id);
+        if(rm.has(id)) out.push(pgrMerge3(bm.get(id),x,rm.get(id)));
+        else if(bm.has(id)){ if(!pgrEq(bm.get(id),x)) out.push(x); }
+        else out.push(x);
+      }
+      for(const x of r){
+        const id=String(x.id); if(seen.has(id)) continue;
+        if(bm.has(id)){ if(!pgrEq(bm.get(id),x)) out.push(x); }
+        else out.push(x);
+      }
+      return out;
+    }
+    if(pgrPrimit(l)&&pgrPrimit(r)&&(b==null||pgrPrimit(b))){
+      const bs=new Set(b||[]), ls=new Set(l), rs=new Set(r), out=[], add=x=>{ if(!out.includes(x)) out.push(x); };
+      (b||[]).forEach(x=>{ if(ls.has(x)&&rs.has(x)) add(x); });
+      [...l,...r].forEach(x=>{ if(!bs.has(x)) add(x); });
+      return out;
+    }
+    if(l&&r&&typeof l==='object'&&typeof r==='object'&&!Array.isArray(l)&&!Array.isArray(r)){
+      const o={};
+      for(const k of new Set([...Object.keys(l),...Object.keys(r)])){
+        const bv=(b&&typeof b==='object')?b[k]:undefined;
+        if(!(k in l)){ if(!pgrEq(bv,r[k])) o[k]=r[k]; }
+        else if(!(k in r)){ if(!pgrEq(bv,l[k])) o[k]=l[k]; }
+        else o[k]=pgrMerge3(bv,l[k],r[k]);
+      }
+      return o;
+    }
+    return l;
+  }
+  function pgrBlob(){ return {records,vendors,removed_auto:removedAuto}; }
+  function pgrAdotar(dados){
+    records=dados.records||[]; vendors=dados.vendors||[]; removedAuto=dados.removed_auto||[];
+    localStorage.setItem('comm_v3_records',JSON.stringify(records));
+    localStorage.setItem('comm_v3_vendors',JSON.stringify(vendors));
+    localStorage.setItem('comm_v3_removed_auto',JSON.stringify(removedAuto));
+  }
+  function pgrMudou(){ try{ return !pgrBaseStr||!pgrEq(pgrBlob(),JSON.parse(pgrBaseStr)); }catch(e){ return true; } }
+  function pgrBadge(txt){ const b=document.getElementById('saveBadge'); if(b) b.textContent=txt; }
+  function pgrRerender(){
+    try{ renderSidebar(); renderHome(); if(activeConsultant && !document.getElementById('editId').value) renderFolder(); }
+    catch(e){ console.warn('[Portal GR] rerender:',e.message); }
+  }
   // Carrega do localStorage primeiro (offline-first)...
   function pgrLoadLocal(){
     try{ records=JSON.parse(localStorage.getItem('comm_v3_records')||'[]'); }catch(e){ records=[]; }
     try{ vendors=JSON.parse(localStorage.getItem('comm_v3_vendors')||'[]'); }catch(e){ vendors=[]; }
+    try{ removedAuto=JSON.parse(localStorage.getItem('comm_v3_removed_auto')||'[]'); }catch(e){ removedAuto=[]; }
   }
-  // ...depois busca a nuvem — se tiver dado, substitui (nuvem é a fonte de verdade quando disponível).
+  // ...depois busca a nuvem. Se sobrou edição local que não chegou lá (F5 antes do envio), junta as duas.
   async function pgrPullCloud(){
     try{
-      const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados').eq('chave','default').maybeSingle();
+      const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados,updated_at').eq('chave','default').maybeSingle();
       if(error) throw error;
       if(data&&data.dados&&(data.dados.records?.length||data.dados.vendors?.length)){
-        records=data.dados.records||[];
-        vendors=data.dados.vendors||[];
-        localStorage.setItem('comm_v3_records',JSON.stringify(records));
-        localStorage.setItem('comm_v3_vendors',JSON.stringify(vendors));
-      }
+        const pendente=localStorage.getItem('comm_v3_pendente')==='1';
+        if(pendente){
+          let base=null; try{ base=JSON.parse(localStorage.getItem('comm_v3_base')||'null'); }catch(e){}
+          pgrAdotar(pgrMerge3(base||data.dados,pgrBlob(),data.dados));
+          pgrSyncAt=data.updated_at; pgrBaseStr=JSON.stringify(data.dados);
+          localStorage.setItem('comm_v3_base',pgrBaseStr);
+          pgrBadge('♻️ Alterações não enviadas foram recuperadas');
+          pgrPushNow();
+        } else {
+          pgrAdotar(data.dados);
+          pgrSyncAt=data.updated_at; pgrBaseStr=JSON.stringify(pgrBlob());
+          localStorage.setItem('comm_v3_base',pgrBaseStr);
+        }
+      } else if(data){ pgrSyncAt=data.updated_at; }
     }catch(e){
       console.warn('[Portal GR] Falha ao buscar da nuvem, usando dados locais:',e.message);
     }
   }
   function pgrPushCloud(){
+    localStorage.setItem('comm_v3_pendente','1');
+    pgrBadge('⏳ Enviando…');
     clearTimeout(pgrCloudTimer);
-    pgrCloudTimer=setTimeout(async()=>{
-      try{
-        const{error}=await pgrSb.from('portal_comissoes_estado').update({
-          dados:{records,vendors},updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null
-        }).eq('chave','default');
-        if(error) throw error;
-      }catch(e){
-        console.warn('[Portal GR] Falha ao salvar na nuvem (dados continuam salvos localmente):',e.message);
-      }
-    },800);
+    pgrCloudTimer=setTimeout(pgrPushNow,400);
   }
+  async function pgrPushNow(){
+    if(!pgrCurUser) return;
+    if(pgrPushing){ pgrPushAgain=true; return; }
+    pgrPushing=true; clearTimeout(pgrPushRetry);
+    try{
+      for(let tent=0;tent<5;tent++){
+        let q=pgrSb.from('portal_comissoes_estado').update({dados:pgrBlob(),updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null}).eq('chave','default');
+        if(pgrSyncAt) q=q.eq('updated_at',pgrSyncAt);
+        const{data,error}=await q.select('updated_at');
+        if(error) throw error;
+        if(data&&data.length){
+          pgrSyncAt=data[0].updated_at; pgrBaseStr=JSON.stringify(pgrBlob());
+          localStorage.setItem('comm_v3_base',pgrBaseStr); localStorage.removeItem('comm_v3_pendente');
+          pgrBadge('☁️ Salvo na nuvem '+new Date().toLocaleTimeString('pt-BR'));
+          return;
+        }
+        // a nuvem mudou (Base GR lançou comissão, outra aba/PC editou): junta e tenta de novo
+        const{data:rem,error:e2}=await pgrSb.from('portal_comissoes_estado').select('dados,updated_at').eq('chave','default').maybeSingle();
+        if(e2) throw e2;
+        if(!rem||!rem.dados) break;
+        let base=null; try{ base=JSON.parse(pgrBaseStr||'null'); }catch(e){}
+        const antes=JSON.stringify(pgrBlob());
+        pgrAdotar(pgrMerge3(base||rem.dados,pgrBlob(),rem.dados));
+        pgrSyncAt=rem.updated_at;
+        if(JSON.stringify(pgrBlob())!==antes) pgrRerender();
+      }
+      throw new Error('a nuvem mudou várias vezes seguidas');
+    }catch(e){
+      console.warn('[Portal GR] Falha ao salvar na nuvem (dados continuam salvos localmente e serão reenviados):',e.message);
+      pgrBadge('⚠️ Sem conexão com a nuvem — salvo só neste computador, reenviando…');
+      pgrPushRetry=setTimeout(pgrPushNow,6000);
+    }finally{
+      pgrPushing=false;
+      if(pgrPushAgain){ pgrPushAgain=false; pgrPushNow(); }
+    }
+  }
+  // Voltando pra esta aba: se nada está pendente e a nuvem tem versão mais nova, atualiza a tela.
+  document.addEventListener('visibilitychange',async()=>{
+    if(document.hidden||!pgrCurUser||pgrPushing||!pgrSyncAt||localStorage.getItem('comm_v3_pendente')==='1') return;
+    if(document.getElementById('editId') && document.getElementById('editId').value) return;   // não mexe no meio de uma edição
+    try{
+      const{data}=await pgrSb.from('portal_comissoes_estado').select('dados,updated_at').eq('chave','default').maybeSingle();
+      if(!data||!data.dados||data.updated_at===pgrSyncAt||localStorage.getItem('comm_v3_pendente')==='1'||pgrPushing) return;
+      pgrAdotar(data.dados); pgrSyncAt=data.updated_at; pgrBaseStr=JSON.stringify(pgrBlob());
+      localStorage.setItem('comm_v3_base',pgrBaseStr);
+      pgrRerender(); pgrBadge('🔄 Atualizado com as alterações mais recentes');
+    }catch(e){}
+  });
+  // F5/fechar com algo ainda não enviado: avisa e deixa marcado pra reenviar na próxima abertura.
+  window.addEventListener('beforeunload',e=>{
+    try{
+      localStorage.setItem('comm_v3_records',JSON.stringify(records));
+      localStorage.setItem('comm_v3_vendors',JSON.stringify(vendors));
+      localStorage.setItem('comm_v3_removed_auto',JSON.stringify(removedAuto));
+      if(localStorage.getItem('comm_v3_pendente')==='1'||pgrMudou()){
+        localStorage.setItem('comm_v3_pendente','1');
+        e.preventDefault(); e.returnValue='';
+      }
+    }catch(err){}
+  });
+  // </SYNC-ENGINE-COMISSOES>
 
   function fmt(v) { return 'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function fmtMonth(m) {
@@ -579,9 +709,7 @@
   function save() {
     localStorage.setItem('comm_v3_records', JSON.stringify(records));
     localStorage.setItem('comm_v3_vendors', JSON.stringify(vendors));
-    const b=document.getElementById('saveBadge');
-    b.textContent='✅ Salvo '+new Date().toLocaleTimeString('pt-BR');
-    setTimeout(()=>b.textContent='💾 Salvo automaticamente',2500);
+    localStorage.setItem('comm_v3_removed_auto', JSON.stringify(removedAuto));
     pgrPushCloud();
   }
 
@@ -936,7 +1064,8 @@
     const editId=document.getElementById('editId').value;
     if(editId){
       const idx=records.findIndex(r=>r.id==editId);
-      if(idx!==-1) records[idx]={...records[idx],consultant:activeConsultant,month,client,credit,parc:selectedParc,perc:selectedPerc,commission};
+      // comissão automática (vinda da Base) editada à mão ganha _editado: a Base não sobrescreve mais
+      if(idx!==-1) records[idx]={...records[idx],consultant:activeConsultant,month,client,credit,parc:selectedParc,perc:selectedPerc,commission,...(records[idx]._auto?{_editado:true}:{})};
     } else {
       records.push({id:Date.now(),consultant:activeConsultant,month,client,credit,parc:selectedParc,perc:selectedPerc,commission});
     }
@@ -962,6 +1091,8 @@
   }
   function deleteRecord(id){
     if(!confirm('Remover este registro?'))return;
+    // comissão automática apagada à mão vai pra lista "apagadas" pra a Base não recriar sozinha
+    if(String(id).startsWith('pag_')&&!removedAuto.includes(String(id))) removedAuto.push(String(id));
     records=records.filter(r=>r.id!=id);save();renderFolder();
   }
 
