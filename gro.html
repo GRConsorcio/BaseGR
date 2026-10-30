@@ -1170,6 +1170,26 @@ const SEED={
 // STATE
 // ──────────────────────────────────────────
 let D={};
+// PROTEÇÃO CONTRA PERDA (30/10/2026 — a base GR foi zerada na nuvem): D começa como {} e, se a página
+// fosse fechada/recarregada na tela de login, o beforeunload gravava {saved_at} como "pendente"; no
+// próximo login o merge entendia que tudo tinha sido apagado e mandava só {saved_at} pra nuvem.
+// pgrCarregado: só grava depois de logar e carregar. pgrPermitirExclusao: liberado por exclusão intencional.
+let pgrCarregado=false, pgrPermitirExclusao=false;
+// Conta os itens de dados (pagamentos, cancelados, financeiro, vendas, vendedores, lançamentos das abas).
+function pgrContar(o){
+  if(!o||typeof o!=='object') return 0;
+  let n=0; const arr=v=>Array.isArray(v)?v.length:0;
+  n+=arr(o.cancelados)+arr(o.financeiro)+arr(o.vendas_mes)+arr(o.vendedores);
+  if(o.pagamentos&&typeof o.pagamentos==='object') for(const v of Object.values(o.pagamentos)) n+=arr(v);
+  if(o.fin_det&&typeof o.fin_det==='object') for(const v of Object.values(o.fin_det)) n+=Array.isArray(v)?v.length:(v&&typeof v==='object'?Object.keys(v).length:0);
+  return n;
+}
+function pgrPerdaGrande(novo,ref){
+  const total=pgrContar(ref); if(!total) return null;
+  const agora=pgrContar(novo), sumidos=total-agora;
+  if(sumidos>=Math.max(10,Math.ceil(total*0.2))) return {sumidos,total};
+  return null;
+}
 let curPage='dashboard';
 let curPagTab='d10';
 
@@ -1298,7 +1318,11 @@ async function pgrPullCloud(){
     const{data,error}=await pgrSb.from('portal_gr_estado').select('dados,updated_at').eq('empresa',PGR_EMPRESA).maybeSingle();
     if(error) throw error;
     if(data&&data.dados&&Object.keys(data.dados).length){
-      const pendente=localStorage.getItem(KEY+'_pendente')==='1';
+      let pendente=localStorage.getItem(KEY+'_pendente')==='1';
+      if(pendente&&!pgrContar(D)&&pgrContar(data.dados)){   // "pendente" sem nenhum dado = cópia quebrada, não edição
+        console.warn('[Portal GR] Pendente sem dados ignorado — usando a nuvem.');
+        localStorage.removeItem(KEY+'_pendente'); pendente=false;
+      }
       if(pendente){
         let base=null; try{ base=JSON.parse(localStorage.getItem(KEY+'_base')||'null'); }catch(e){}
         const antes=pgrSemHora(D);
@@ -1327,7 +1351,31 @@ async function pgrPushNow(){
   if(pgrPushing){ pgrPushAgain=true; return; }
   pgrPushing=true; clearTimeout(pgrPushRetry);
   try{
+    let ref=null; try{ ref=JSON.parse(pgrBaseStr||'null'); }catch(e){}
+    if(!pgrSyncAt){   // nunca sincronizou nesta sessão: lê a nuvem e junta antes, em vez de gravar às cegas por cima
+      const{data:rem0,error:e0}=await pgrSb.from('portal_gr_estado').select('dados,updated_at').eq('empresa',PGR_EMPRESA).maybeSingle();
+      if(e0) throw e0;
+      if(rem0){
+        pgrSyncAt=rem0.updated_at;
+        if(rem0.dados&&pgrContar(rem0.dados)){ D=pgrMerge3(ref||rem0.dados,D,rem0.dados); ref=rem0.dados; localStorage.setItem(KEY,JSON.stringify(D)); pgrRefreshView(); }
+      }
+    }
     for(let tent=0;tent<5;tent++){
+      const perda=pgrPermitirExclusao?null:pgrPerdaGrande(D,ref);
+      if(perda){
+        const ok=confirm(`ATENÇÃO: este salvamento vai APAGAR da nuvem ${perda.sumidos} de ${perda.total} item(ns) da base ${PGR_EMPRESA} (pagamentos, cancelados, financeiro...).\n\n`+
+          `Normalmente isso é uma cópia antiga ou vazia deste navegador, não algo que você fez.\n\nOK = apagar mesmo\nCancelar = descartar a cópia deste navegador e recarregar da nuvem (recomendado)`);
+        if(!ok){
+          try{ localStorage.setItem(KEY+'_descartado',JSON.stringify({em:new Date().toISOString(),dados:D})); }catch(e){}
+          localStorage.removeItem(KEY+'_pendente');
+          const{data:rem1,error:e1}=await pgrSb.from('portal_gr_estado').select('dados,updated_at').eq('empresa',PGR_EMPRESA).maybeSingle();
+          if(e1) throw e1;
+          if(rem1&&rem1.dados){ D=rem1.dados; pgrSyncAt=rem1.updated_at; pgrBaseStr=JSON.stringify(D); localStorage.setItem(KEY,JSON.stringify(D)); localStorage.setItem(KEY+'_base',pgrBaseStr); }
+          pgrRefreshView(); pgrAviso('Cópia deste navegador descartada — dados recarregados da nuvem ✓');
+          return;
+        }
+        pgrPermitirExclusao=true;
+      }
       let q=pgrSb.from('portal_gr_estado').update({dados:D,updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null}).eq('empresa',PGR_EMPRESA);
       if(pgrSyncAt) q=q.eq('updated_at',pgrSyncAt);   // só grava se ninguém mexeu na nuvem desde a última sincronização
       const{data,error}=await q.select('updated_at');
@@ -1335,6 +1383,7 @@ async function pgrPushNow(){
       if(data&&data.length){
         pgrSyncAt=data[0].updated_at; pgrBaseStr=JSON.stringify(D);
         localStorage.setItem(KEY+'_base',pgrBaseStr); localStorage.removeItem(KEY+'_pendente');
+        pgrPermitirExclusao=false;
         pgrPonto('#22c55e'); return;
       }
       // a nuvem mudou (outra aba/PC ou o CRM): junta as duas versões e tenta de novo
@@ -1344,7 +1393,7 @@ async function pgrPushNow(){
       let base=null; try{ base=JSON.parse(pgrBaseStr||'null'); }catch(e){}
       const antes=pgrSemHora(D);
       D=pgrMerge3(base||rem.dados,D,rem.dados);
-      pgrSyncAt=rem.updated_at;
+      pgrSyncAt=rem.updated_at; ref=rem.dados;
       localStorage.setItem(KEY,JSON.stringify(D));
       if(pgrSemHora(D)!==antes){ pgrRefreshView(); pgrAviso('Dados de outra sessão foram juntados com os seus ✓'); }
     }
@@ -1563,6 +1612,7 @@ function load(){
   catch{D=JSON.parse(JSON.stringify(SEED));}
 }
 function save(){
+  if(!pgrCarregado){ console.warn('[Portal GR] save() antes de carregar ignorado'); return; }
   D.saved_at=new Date().toLocaleString('pt-BR');
   localStorage.setItem(KEY,JSON.stringify(D));
   document.getElementById('foot-save').textContent='Salvo: '+D.saved_at;
@@ -1572,6 +1622,7 @@ function save(){
 // Ao fechar/F5: guarda o estado local e, se ainda há algo que não chegou na nuvem, deixa marcado como
 // pendente — na próxima abertura é reenviado (antes, a nuvem substituía tudo e a edição sumia).
 window.addEventListener('beforeunload',()=>{
+  if(!pgrCarregado) return;   // tela de login / ainda carregando: D está vazio, não grava nada
   try{
     D.saved_at=new Date().toLocaleString('pt-BR');
     localStorage.setItem(KEY,JSON.stringify(D));
@@ -1876,6 +1927,7 @@ function addFinTab(){
 
 function deleteFinTab(id){
   if(!confirm('Apagar esta aba e todos os lançamentos? Esta ação não pode ser desfeita.'))return;
+  pgrPermitirExclusao=true;
   D.fin_tabs=(D.fin_tabs||[]).filter(t=>t!==id);
   delete D.fin_tab_labels[id];
   if(D.fin_det) delete D.fin_det[id];
@@ -1957,6 +2009,7 @@ function deletePagTab(key){
   const label=(D.pag_tab_labels||{})[key]||key;
   const count=(D.pagamentos?.[key]||[]).length;
   if(!confirm('Apagar a aba "'+label+'"'+(count>0?' com '+count+' cliente(s)?':'?')))return;
+  pgrPermitirExclusao=true;
   D.pag_tabs=(D.pag_tabs||[]).filter(t=>t!==key);
   delete D.pag_tab_labels[key];
   delete D.pagamentos[key];
@@ -3044,6 +3097,7 @@ function toast(msg,err=false){
 async function pgrInitApp(){
 load();
 await pgrPullCloud();
+pgrCarregado=true;
 // migrate: ensure d25 exists
 if(!D.pag_tabs){D.pag_tabs=['d10','d16','d20','d25'];D.pag_tab_labels={d10:'Dia 10',d16:'Dia 16',d20:'Dia 20',d25:'Dia 25'};}
 if(!D.pagamentos.d25)D.pagamentos.d25=[];
@@ -3338,6 +3392,7 @@ function bkHandleFile(file) {
 
 // ── Aplica dados ao D e re-renderiza ──
 function bkApplyData(data) {
+  pgrPermitirExclusao=true;   // restaurar/importar backup é intencional
   // Substitui D mantendo a referência
   Object.keys(D).forEach(function(k){ delete D[k]; });
   Object.keys(data).forEach(function(k){ D[k] = data[k]; });
