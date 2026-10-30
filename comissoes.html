@@ -547,6 +547,12 @@
   // sobrescreve) e automático apagado à mão vai pra removed_auto (a Base não recria).
   let removedAuto = [];
   let pgrSyncAt=null, pgrBaseStr=null, pgrPushing=false, pgrPushAgain=false, pgrPushRetry=null;
+  // PROTEÇÃO CONTRA PERDA (30/10/2026 — a planilha foi zerada na nuvem por uma cópia vazia deste navegador):
+  //  • pgrCarregado: só depois de logar e carregar os dados a página pode gravar no localStorage ao sair.
+  //    Antes, fechar/recarregar na tela de login gravava lista VAZIA marcada como "pendente" e, no
+  //    próximo acesso, o merge entendia que tudo tinha sido apagado e zerava a nuvem.
+  //  • pgrPermitirExclusao: liberado só pelo Zerar e pelo Importar "substituir" (exclusão intencional).
+  let pgrCarregado=false, pgrPermitirExclusao=false;
   const pgrEq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   const pgrTemId=x=>x&&typeof x==='object'&&!Array.isArray(x)&&x.id!=null;
   const pgrPrimit=a=>Array.isArray(a)&&a.every(x=>x===null||typeof x!=='object');
@@ -606,13 +612,38 @@
     try{ vendors=JSON.parse(localStorage.getItem('comm_v3_vendors')||'[]'); }catch(e){ vendors=[]; }
     try{ removedAuto=JSON.parse(localStorage.getItem('comm_v3_removed_auto')||'[]'); }catch(e){ removedAuto=[]; }
   }
+  // Quanto um salvamento apagaria em relação à última versão conhecida da nuvem. Devolve null se for pouco.
+  function pgrPerdaGrande(novo,ref){
+    if(!ref||!Array.isArray(ref.records)) return null;
+    const ids=new Set((novo.records||[]).map(r=>String(r.id)));
+    const total=ref.records.length;
+    const sumidos=ref.records.filter(r=>!ids.has(String(r.id))).length;
+    const refV=ref.vendors||[], novoV=novo.vendors||[];
+    const vendSumidos=refV.filter(v=>!novoV.includes(v)).length;
+    const limite=Math.max(10,Math.ceil(total*0.2));   // 10 lançamentos ou 20% do total, o que for maior
+    if(sumidos>=limite||(refV.length&&!novoV.length)||vendSumidos>=3) return {sumidos,total,vendSumidos};
+    return null;
+  }
+  // Descarta a cópia deste navegador (guarda uma cópia de segurança em comm_v3_descartado) e recarrega da nuvem.
+  async function pgrDescartarLocal(){
+    try{ localStorage.setItem('comm_v3_descartado',JSON.stringify({em:new Date().toISOString(),dados:pgrBlob()})); }catch(e){}
+    localStorage.removeItem('comm_v3_pendente');
+    const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados,updated_at').eq('chave','default').maybeSingle();
+    if(error) throw error;
+    if(data&&data.dados){ pgrAdotar(data.dados); pgrSyncAt=data.updated_at; pgrBaseStr=JSON.stringify(pgrBlob()); localStorage.setItem('comm_v3_base',pgrBaseStr); }
+    pgrRerender(); pgrBadge('🛡️ Cópia deste navegador descartada — dados recarregados da nuvem');
+  }
   // ...depois busca a nuvem. Se sobrou edição local que não chegou lá (F5 antes do envio), junta as duas.
   async function pgrPullCloud(){
     try{
       const{data,error}=await pgrSb.from('portal_comissoes_estado').select('dados,updated_at').eq('chave','default').maybeSingle();
       if(error) throw error;
       if(data&&data.dados&&(data.dados.records?.length||data.dados.vendors?.length)){
-        const pendente=localStorage.getItem('comm_v3_pendente')==='1';
+        let pendente=localStorage.getItem('comm_v3_pendente')==='1';
+        if(pendente&&!records.length&&!vendors.length){   // "pendente" com tudo vazio = cópia quebrada, não edição
+          console.warn('[Portal GR] Pendente com lista local vazia ignorado — usando a nuvem.');
+          localStorage.removeItem('comm_v3_pendente'); pendente=false;
+        }
         if(pendente){
           let base=null; try{ base=JSON.parse(localStorage.getItem('comm_v3_base')||'null'); }catch(e){}
           pgrAdotar(pgrMerge3(base||data.dados,pgrBlob(),data.dados));
@@ -641,7 +672,24 @@
     if(pgrPushing){ pgrPushAgain=true; return; }
     pgrPushing=true; clearTimeout(pgrPushRetry);
     try{
+      let ref=null; try{ ref=JSON.parse(pgrBaseStr||'null'); }catch(e){}
+      if(!pgrSyncAt){   // nunca sincronizou nesta sessão: lê a nuvem e junta antes, em vez de gravar às cegas por cima
+        const{data:rem0,error:e0}=await pgrSb.from('portal_comissoes_estado').select('dados,updated_at').eq('chave','default').maybeSingle();
+        if(e0) throw e0;
+        if(rem0){
+          pgrSyncAt=rem0.updated_at;
+          if(rem0.dados&&(rem0.dados.records?.length||rem0.dados.vendors?.length)){ pgrAdotar(pgrMerge3(ref||rem0.dados,pgrBlob(),rem0.dados)); ref=rem0.dados; pgrRerender(); }
+        }
+      }
       for(let tent=0;tent<5;tent++){
+        const perda=pgrPermitirExclusao?null:pgrPerdaGrande(pgrBlob(),ref);
+        if(perda){
+          const ok=confirm(`ATENÇÃO: este salvamento vai APAGAR da nuvem ${perda.sumidos} de ${perda.total} lançamento(s)`+
+            (perda.vendSumidos?` e ${perda.vendSumidos} vendedor(es)`:'')+`.\n\nNormalmente isso é uma cópia antiga ou vazia deste navegador, não algo que você fez.\n\n`+
+            `OK = apagar mesmo\nCancelar = descartar a cópia deste navegador e recarregar da nuvem (recomendado)`);
+          if(!ok){ await pgrDescartarLocal(); return; }
+          pgrPermitirExclusao=true;
+        }
         let q=pgrSb.from('portal_comissoes_estado').update({dados:pgrBlob(),updated_at:new Date().toISOString(),updated_by:pgrCurUser?.id||null}).eq('chave','default');
         if(pgrSyncAt) q=q.eq('updated_at',pgrSyncAt);
         const{data,error}=await q.select('updated_at');
@@ -649,6 +697,7 @@
         if(data&&data.length){
           pgrSyncAt=data[0].updated_at; pgrBaseStr=JSON.stringify(pgrBlob());
           localStorage.setItem('comm_v3_base',pgrBaseStr); localStorage.removeItem('comm_v3_pendente');
+          pgrPermitirExclusao=false;
           pgrBadge('☁️ Salvo na nuvem '+new Date().toLocaleTimeString('pt-BR'));
           return;
         }
@@ -659,7 +708,7 @@
         let base=null; try{ base=JSON.parse(pgrBaseStr||'null'); }catch(e){}
         const antes=JSON.stringify(pgrBlob());
         pgrAdotar(pgrMerge3(base||rem.dados,pgrBlob(),rem.dados));
-        pgrSyncAt=rem.updated_at;
+        pgrSyncAt=rem.updated_at; ref=rem.dados;
         if(JSON.stringify(pgrBlob())!==antes) pgrRerender();
       }
       throw new Error('a nuvem mudou várias vezes seguidas');
@@ -686,6 +735,7 @@
   });
   // F5/fechar com algo ainda não enviado: avisa e deixa marcado pra reenviar na próxima abertura.
   window.addEventListener('beforeunload',e=>{
+    if(!pgrCarregado) return;   // tela de login / ainda carregando: a lista em memória está vazia, não grava nada
     try{
       localStorage.setItem('comm_v3_records',JSON.stringify(records));
       localStorage.setItem('comm_v3_vendors',JSON.stringify(vendors));
@@ -707,6 +757,7 @@
   function initials(name) { return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 
   function save() {
+    if(!pgrCarregado){ console.warn('[Portal GR] save() antes de carregar ignorado'); return; }
     localStorage.setItem('comm_v3_records', JSON.stringify(records));
     localStorage.setItem('comm_v3_vendors', JSON.stringify(vendors));
     localStorage.setItem('comm_v3_removed_auto', JSON.stringify(removedAuto));
@@ -785,6 +836,7 @@
     // fixas, não são apagadas, pra não precisar recriar toda vez.
     records=[];
     closeZerarModal();
+    pgrPermitirExclusao=true;   // exclusão intencional: não pede a confirmação de perda grande
     save();
     showHome();
     renderSidebar();
@@ -833,6 +885,7 @@
       if(!confirm(`Isso vai APAGAR os ${records.length} registro(s) e ${vendors.length} vendedor(es) atuais e substituir pelos do arquivo. Confirma?`)) return;
       records = data.records;
       vendors = data.vendors;
+      pgrPermitirExclusao = true;   // substituir tudo é intencional
     } else {
       const idsExistentes = new Set(records.map(r=>r.id));
       const novos = data.records.filter(r=>!idsExistentes.has(r.id));
@@ -963,6 +1016,7 @@
     if(!confirm(msg)) return;
     vendors = vendors.filter(v=>v!==activeConsultant);
     records = records.filter(r=>r.consultant!==activeConsultant);
+    pgrPermitirExclusao = true;   // já confirmado acima
     save(); showHome();
   }
 
@@ -1107,6 +1161,7 @@
     document.getElementById('fMonth').value=pgrMesReferencia();
     pgrLoadLocal();
     await pgrPullCloud();
+    pgrCarregado=true;
     renderSidebar(); renderHome();
   }
   pgrCheckAuth();
